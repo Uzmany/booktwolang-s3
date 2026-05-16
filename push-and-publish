@@ -22,7 +22,8 @@ if [[ $# -lt 1 ]]; then
 fi
 COMMIT_MSG="$1"
 
-EC2_HOST="${EC2_HOST:-54.242.99.16}"
+EC2_INSTANCE_ID="${EC2_INSTANCE_ID:-i-0f9e1d882c3ada3a4}"
+EC2_HOST="${EC2_HOST:-$(aws ec2 describe-instances --instance-ids "$EC2_INSTANCE_ID" --region us-east-1 --query 'Reservations[0].Instances[0].PublicIpAddress' --output text 2>/dev/null)}"
 EC2_USER="${EC2_USER:-ec2-user}"
 KEY="${KEY:-$HOME/.ssh/ketzek_ai_backend_2.pem}"
 S3_BUCKET="${S3_BUCKET:-www.booktwolang.com}"
@@ -81,20 +82,13 @@ if [[ ! -d .venv ]]; then
 fi
 .venv/bin/pip install --quiet --disable-pip-version-check -r requirements.txt
 
-if [[ -f /home/ec2-user/.booktwolang.env ]]; then
-  set -a; source /home/ec2-user/.booktwolang.env; set +a
-fi
-
-pkill -f "uvicorn app.main:app --host 0.0.0.0 --port $API_PORT" 2>/dev/null || true
-sleep 1
-nohup .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port "$API_PORT" \
-  > /tmp/booktwolang.log 2>&1 &
+# Restart via systemd (configured at /etc/systemd/system/booktwolang.service).
+sudo systemctl restart booktwolang
 sleep 2
 if curl -sf "http://localhost:$API_PORT/" > /dev/null; then
   echo "  backend up on :$API_PORT"
 else
-  echo "  WARN: backend health check failed; tail /tmp/booktwolang.log"
-  tail -n 25 /tmp/booktwolang.log || true
+  echo "  WARN: backend health check failed; check journalctl -u booktwolang"
   exit 1
 fi
 REMOTE

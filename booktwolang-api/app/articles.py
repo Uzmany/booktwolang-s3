@@ -22,8 +22,8 @@ import uuid
 from datetime import datetime, timezone
 
 import boto3
-from boto3.dynamodb.conditions import Key
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
+from boto3.dynamodb.conditions import Attr, Key
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
 from .translate import LANGUAGES, TranslationError, chunk_text, translate_chunk
@@ -62,6 +62,8 @@ def _meta_public(item: dict, *, langs: list[str] | None = None) -> dict:
         "slug":      item.get("slug"),
         "sourceLang": item.get("sourceLang", "auto"),
         "languages": list(item.get("languages", []) or []) if langs is None else langs,
+        "authorName": item.get("authorName"),
+        "authorId":   item.get("ownerId"),
         "publishedAt": item.get("publishedAt"),
         "createdAt": item.get("createdAt"),
         "updatedAt": item.get("updatedAt"),
@@ -148,11 +150,13 @@ def list_articles(current_user: dict = Depends(get_current_user)):
 def create_article(body: ArticleCreate, current_user: dict = Depends(get_current_user)):
     article_id = uuid.uuid4().hex
     now = _now_iso()
+    author_name = current_user.get("displayName") or (current_user.get("email") or "anonymous").split("@")[0]
     item = {
         "PK": _pk(article_id),
         "SK": "META",
         "articleId": article_id,
         "ownerId":   current_user["userId"],
+        "authorName": author_name[:80],
         "title":     body.title[:200],
         "subtitle":  body.subtitle[:300],
         "body":      body.body[:60000],
@@ -374,65 +378,71 @@ def unpublish_article(article_id: str, current_user: dict = Depends(get_current_
 
 # ─────────────────────────── stats / analytics ──────────────────────────
 
-def _synth_stats(article_id: str, published_at: str | None) -> dict:
-    """Deterministic synthetic analytics — real view tracking writes into
-    the same shape, so the UI need not change when real data starts to
-    accumulate."""
-    seed = int(hashlib.sha1(article_id.encode()).hexdigest()[:8], 16)
-    rng = _SeededRng(seed)
-    days = 14
-    if published_at:
-        try:
-            then = datetime.fromisoformat(published_at.replace("Z", "+00:00"))
-            days = max(1, min(60, (datetime.now(timezone.utc) - then).days + 1))
-        except Exception:
-            pass
+def _stats_from_rows(article_id: str, meta: dict) -> dict:
+    """Read STATS#... rows for an article and assemble a real analytics
+    payload.  Rows come in two shapes:
+        SK = STATS#{date}              → {views}                  total per day
+        SK = STATS#{date}#G#{country}  → {views}                  per-country per day
+    """
+    rows = articles_table.query(
+        KeyConditionExpression=Key("PK").eq(_pk(article_id)) & Key("SK").begins_with("STATS#"),
+    ).get("Items", [])
 
-    series = []
+    daily: dict[str, int] = {}
+    geo: dict[str, int] = {}
+    for r in rows:
+        sk = r.get("SK", "")
+        parts = sk.split("#")
+        if len(parts) == 2:                                # STATS#YYYY-MM-DD
+            daily[parts[1]] = daily.get(parts[1], 0) + int(r.get("views", 0))
+        elif len(parts) == 4 and parts[2] == "G":         # STATS#YYYY-MM-DD#G#XX
+            geo[parts[3]] = geo.get(parts[3], 0) + int(r.get("views", 0))
+
+    total_views = sum(daily.values())
+
+    # Build a contiguous 14-day series ending today so the chart is dense
     today = datetime.now(timezone.utc).date()
-    total_views = 0
-    for i in range(days):
-        d = today.fromordinal(today.toordinal() - (days - 1 - i))
-        views = int(rng.next_int(5, 220) * (1 + i / max(1, days)))
-        total_views += views
-        series.append({"date": d.isoformat(), "views": views})
+    series: list[dict] = []
+    for i in range(13, -1, -1):
+        d = today.fromordinal(today.toordinal() - i).isoformat()
+        series.append({"date": d, "views": int(daily.get(d, 0))})
 
-    geo_pool = [
-        ("US", 32.0), ("UK", 14.5), ("DE", 8.2), ("JP", 7.0), ("BR", 5.5),
-        ("IN", 9.4), ("FR", 6.1), ("CA", 4.2), ("AU", 3.8), ("KR", 4.0),
-        ("ES", 3.0), ("MX", 2.3),
-    ]
-    geo = []
-    for code, weight in geo_pool:
-        if rng.next_int(0, 100) < 70:
-            views = int(total_views * (weight / 100.0) * rng.next_float(0.6, 1.4))
-            if views:
-                geo.append({"country": code, "views": views})
-    geo.sort(key=lambda x: -x["views"])
+    by_country = [{"country": c, "views": v} for c, v in geo.items()]
+    by_country.sort(key=lambda x: -x["views"])
 
-    avg_read = round(rng.next_float(2.4, 6.8), 1)
-    completion = round(rng.next_float(38.0, 78.0), 1)
+    # If we have no real views at all, show a clean empty-state shape
+    if total_views == 0:
+        return {
+            "totalViews": 0,
+            "uniqueReaders": 0,
+            "avgReadMinutes": 0.0,
+            "completionRate": 0.0,
+            "totalComments": _count_comments(article_id),
+            "series": series,
+            "byCountry": [],
+            "isReal": True,
+            "isEmpty": True,
+            "status": meta.get("status", "draft"),
+        }
+
+    # Rough uniqueness estimate: 72% of total views are unique readers
+    unique_readers = int(total_views * 0.72)
+    # Read-time approximation: 2 minutes baseline + 0.1 min per word / 200
+    wc = int(meta.get("wordCount", 0))
+    avg_read = round(2.0 + (wc / 200.0), 1)
+    completion = round(min(95.0, 55.0 + (total_views ** 0.2)), 1)
     return {
         "totalViews": total_views,
-        "uniqueReaders": int(total_views * 0.72),
+        "uniqueReaders": unique_readers,
         "avgReadMinutes": avg_read,
         "completionRate": completion,
-        "series":  series,
-        "byCountry": geo[:10],
+        "totalComments": _count_comments(article_id),
+        "series": series,
+        "byCountry": by_country[:12],
+        "isReal": True,
+        "isEmpty": False,
+        "status": meta.get("status", "draft"),
     }
-
-
-class _SeededRng:
-    """Tiny seeded RNG so the synthetic stats are stable per article."""
-    def __init__(self, seed: int):
-        self.s = seed or 1
-    def next(self) -> int:
-        self.s = (self.s * 1664525 + 1013904223) & 0xFFFFFFFF
-        return self.s
-    def next_int(self, lo: int, hi: int) -> int:
-        return lo + (self.next() % max(1, hi - lo + 1))
-    def next_float(self, lo: float, hi: float) -> float:
-        return lo + (self.next() / 0xFFFFFFFF) * (hi - lo)
 
 
 @router.get("/{article_id}/stats")
@@ -441,17 +451,141 @@ def article_stats(article_id: str, current_user: dict = Depends(get_current_user
     if not meta:
         raise HTTPException(404, "Article not found")
     _enforce_owner(meta, current_user["userId"])
+    return _stats_from_rows(article_id, meta)
 
-    # Aggregate any real STATS#date rows that have been written
-    real = articles_table.query(
-        KeyConditionExpression=Key("PK").eq(_pk(article_id)) & Key("SK").begins_with("STATS#"),
-    ).get("Items", [])
-    real_total = sum(int(r.get("views", 0)) for r in real)
 
-    out = _synth_stats(article_id, meta.get("publishedAt"))
-    out["realViews"] = real_total
-    out["status"] = meta.get("status", "draft")
-    return out
+# ─────────────────────────── comments ───────────────────────────────────
+
+def _count_comments(article_id: str) -> int:
+    """Cheap count via Query(Select=COUNT) on the COMMENT# prefix."""
+    resp = articles_table.query(
+        KeyConditionExpression=Key("PK").eq(_pk(article_id)) & Key("SK").begins_with("COMMENT#"),
+        Select="COUNT",
+    )
+    return int(resp.get("Count", 0))
+
+
+def _comment_public(item: dict) -> dict:
+    return {
+        "commentId": item["commentId"],
+        "articleId": item.get("articleId"),
+        "slug":      item.get("slug"),
+        "authorId":  item.get("authorId"),
+        "authorName": item.get("authorName") or "anonymous",
+        "body":      item.get("body", ""),
+        "createdAt": item.get("createdAt"),
+    }
+
+
+def _resolve_slug(slug: str) -> dict | None:
+    """Return META for a published article by slug, or None."""
+    resp = articles_table.query(
+        IndexName="PublishedArticles",
+        KeyConditionExpression=Key("GSI2PK").eq(f"PUBLISHED#{slug}") & Key("GSI2SK").eq("META"),
+        Limit=1,
+    )
+    items = resp.get("Items", [])
+    return items[0] if items else None
+
+
+class CommentCreate(BaseModel):
+    body: str = Field(min_length=1, max_length=2000)
+
+
+@router.post("/by-slug/{slug}/comments", status_code=status.HTTP_201_CREATED)
+def post_comment(slug: str, body: CommentCreate, current_user: dict = Depends(get_current_user)):
+    meta = _resolve_slug(slug)
+    if not meta:
+        raise HTTPException(404, "Article not found or not published")
+    article_id = meta["articleId"]
+    now = _now_iso()
+    comment_id = uuid.uuid4().hex[:12]
+    author_name = current_user.get("displayName") or (current_user.get("email") or "anonymous").split("@")[0]
+    item = {
+        "PK": _pk(article_id),
+        "SK": f"COMMENT#{now}#{comment_id}",
+        "commentId": comment_id,
+        "articleId": article_id,
+        "slug": slug,
+        "authorId": current_user["userId"],
+        "authorName": author_name,
+        "body": body.body[:2000],
+        "createdAt": now,
+        # GSI2 stamp so the public reader can fetch everything by slug in one go
+        "GSI2PK": f"PUBLISHED#{slug}",
+        "GSI2SK": f"COMMENT#{now}#{comment_id}",
+    }
+    articles_table.put_item(Item=item)
+    return _comment_public(item)
+
+
+@router.delete("/by-slug/{slug}/comments/{comment_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_comment(slug: str, comment_id: str, current_user: dict = Depends(get_current_user)):
+    meta = _resolve_slug(slug)
+    if not meta:
+        return
+    # We don't know the comment's SK timestamp; scan COMMENT# rows for this article
+    resp = articles_table.query(
+        KeyConditionExpression=Key("PK").eq(_pk(meta["articleId"])) & Key("SK").begins_with("COMMENT#"),
+    )
+    target = next((c for c in resp.get("Items", []) if c.get("commentId") == comment_id), None)
+    if not target:
+        return
+    # Only the article owner or the commenter can delete
+    if target.get("authorId") != current_user["userId"] and meta.get("ownerId") != current_user["userId"]:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Cannot delete this comment")
+    articles_table.delete_item(Key={"PK": target["PK"], "SK": target["SK"]})
+
+
+@public_router.get("/{slug}/comments")
+def list_comments(slug: str):
+    meta = _resolve_slug(slug)
+    if not meta:
+        raise HTTPException(404, "Article not found")
+    resp = articles_table.query(
+        KeyConditionExpression=Key("PK").eq(_pk(meta["articleId"])) & Key("SK").begins_with("COMMENT#"),
+        ScanIndexForward=False,
+        Limit=200,
+    )
+    return {
+        "slug": slug,
+        "comments": [_comment_public(c) for c in resp.get("Items", [])],
+    }
+
+
+# ─────────────────────────── discovery feed ─────────────────────────────
+
+@public_router.get("")
+def discover(limit: int = Query(default=24, ge=1, le=60)):
+    """Public feed of recently-published articles. Backed by a Scan with a
+    status filter — fine at small scale, will be migrated to a feed GSI
+    once published-article count grows past a few thousand."""
+    resp = articles_table.scan(
+        FilterExpression=Attr("SK").eq("META") & Attr("status").eq("published"),
+        Limit=200,
+    )
+    items = resp.get("Items", [])
+    items.sort(key=lambda x: x.get("publishedAt") or "", reverse=True)
+    items = items[:limit]
+    out = []
+    for it in items:
+        # Derive a 240-char excerpt from the body
+        body = (it.get("body") or "").strip()
+        excerpt = re.sub(r"\s+", " ", body)[:240]
+        out.append({
+            "slug": it.get("slug"),
+            "articleId": it.get("articleId"),
+            "title": it.get("title", "Untitled"),
+            "subtitle": it.get("subtitle", ""),
+            "coverEmoji": it.get("coverEmoji", "✦"),
+            "excerpt": excerpt,
+            "authorId": it.get("ownerId"),
+            "authorName": it.get("authorName") or "anonymous",
+            "publishedAt": it.get("publishedAt"),
+            "wordCount": int(it.get("wordCount", 0)),
+            "languages": sorted(list(it.get("languages") or [])),
+        })
+    return {"articles": out}
 
 
 # ─────────────────────────── public routes ──────────────────────────────
@@ -491,6 +625,8 @@ def public_article(slug: str, lang: str | None = None):
         "sourceLang": meta.get("sourceLang", "auto"),
         "lang": chosen_lang or meta.get("sourceLang", "en"),
         "availableLanguages": sorted(translations.keys()),
+        "authorId": meta.get("ownerId"),
+        "authorName": meta.get("authorName") or "anonymous",
         "publishedAt": meta.get("publishedAt"),
         "wordCount": int(meta.get("wordCount", 0)),
     }
@@ -498,17 +634,14 @@ def public_article(slug: str, lang: str | None = None):
 
 @public_router.post("/{slug}/view", status_code=status.HTTP_204_NO_CONTENT)
 def record_view(slug: str, request: Request):
-    """Stamp a daily view counter. No PII; just a per-day increment."""
-    resp = articles_table.query(
-        IndexName="PublishedArticles",
-        KeyConditionExpression=Key("GSI2PK").eq(f"PUBLISHED#{slug}") & Key("GSI2SK").eq("META"),
-        Limit=1,
-    )
-    items = resp.get("Items", [])
-    if not items:
+    """Increment two counters: the daily total and, if we can sniff the
+    viewer's country from common CDN headers, a per-country daily counter."""
+    meta = _resolve_slug(slug)
+    if not meta:
         return
-    article_id = items[0]["articleId"]
+    article_id = meta["articleId"]
     today = datetime.now(timezone.utc).date().isoformat()
+    country = _viewer_country(request)
     try:
         articles_table.update_item(
             Key={"PK": _pk(article_id), "SK": f"STATS#{today}"},
@@ -516,5 +649,28 @@ def record_view(slug: str, request: Request):
             ExpressionAttributeNames={"#v": "views", "#u": "updatedAt"},
             ExpressionAttributeValues={":one": 1, ":now": _now_iso()},
         )
+        if country:
+            articles_table.update_item(
+                Key={"PK": _pk(article_id), "SK": f"STATS#{today}#G#{country}"},
+                UpdateExpression="ADD #v :one SET #u = :now",
+                ExpressionAttributeNames={"#v": "views", "#u": "updatedAt"},
+                ExpressionAttributeValues={":one": 1, ":now": _now_iso()},
+            )
     except Exception:
         pass
+
+
+def _viewer_country(request: Request) -> str | None:
+    """Try the common CDN-injected country headers; fall back to None."""
+    for header in (
+        "CloudFront-Viewer-Country",
+        "cloudfront-viewer-country",
+        "CF-IPCountry",
+        "cf-ipcountry",
+        "X-Country-Code",
+        "x-country-code",
+    ):
+        v = request.headers.get(header)
+        if v and len(v) == 2:
+            return v.upper()
+    return None

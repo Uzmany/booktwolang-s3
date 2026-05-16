@@ -48,7 +48,7 @@ const STORAGE = {
   broadcastLangs: "btl_broadcast_langs_v1",
 };
 
-const WORKSPACES = ["library", "nexus", "vault", "broadcast"];
+const WORKSPACES = ["library", "nexus", "vault", "broadcast", "discover"];
 
 /* Native-script names. Falls back to the API's English label when missing. */
 const NATIVE_NAMES = {
@@ -345,13 +345,15 @@ async function showView(view) {
   $("#view-nexus").hidden     = view !== "nexus";
   $("#view-vault").hidden     = view !== "vault";
   $("#view-broadcast").hidden = view !== "broadcast";
+  $("#view-discover").hidden  = view !== "discover";
   $("#view-studio").hidden    = view !== "studio";
+  $("#view-reader").hidden    = view !== "reader";
 
   // Topbar visible everywhere except the cinematic auth screen
   $("#topbar").style.display = view === "auth" ? "none" : "";
 
-  // Hide workspace switcher when in studio (sub-view)
-  $("#workspace-switcher").style.display = (view === "auth" || view === "studio") ? "none" : "";
+  // Hide workspace switcher when in studio or reader (sub-views)
+  $("#workspace-switcher").style.display = (view === "auth" || view === "studio" || view === "reader") ? "none" : "";
 
   // Persist last workspace
   if (WORKSPACES.includes(view)) {
@@ -374,6 +376,8 @@ async function showView(view) {
   } else if (view === "broadcast") {
     await refreshLanguages();
     await refreshArticles();
+  } else if (view === "discover") {
+    await refreshDiscover();
   }
 
   if (view !== "studio") {
@@ -2755,7 +2759,7 @@ async function publishArticle() {
     const idx = state.articles.findIndex((x) => x.articleId === a.articleId);
     if (idx >= 0) state.articles[idx] = { ...state.articles[idx], ...data };
     renderComposer();
-    toast(`Live at ${data.publicUrl || "/r/" + data.slug}`, "success");
+    showPublishSuccess(state.broadcastActive);
   } catch (err) { toast(err.message, "error"); }
 }
 
@@ -2845,6 +2849,246 @@ function wireBroadcastOnce() {
   $("#broadcast-publish").addEventListener("click", publishArticle);
   $("#broadcast-unpublish").addEventListener("click", unpublishArticle);
   $("#broadcast-delete").addEventListener("click", deleteArticle);
+
+  // Publish overlay
+  $$("#publish-overlay [data-close]").forEach((el) => el.addEventListener("click", () => { $("#publish-overlay").hidden = true; }));
+  $("#publish-copy").addEventListener("click", async () => {
+    const url = $("#publish-url").value;
+    try { await navigator.clipboard.writeText(url); $("#publish-copy-label").textContent = "Copied!"; setTimeout(() => $("#publish-copy-label").textContent = "Copy link", 1600); }
+    catch (_) { toast("Copy failed", "error"); }
+  });
+  $("#publish-open").addEventListener("click", () => {
+    const url = $("#publish-url").value;
+    window.open(url, "_blank", "noopener,noreferrer");
+  });
+  $("#publish-discover").addEventListener("click", () => {
+    $("#publish-overlay").hidden = true;
+    closeArticle();
+    showView("discover");
+  });
+
+  // Discover refresh
+  $("#discover-refresh")?.addEventListener("click", refreshDiscover);
+}
+
+
+/* ════════════════════════ 17. DISCOVER + PUBLIC READER ══════════════════ */
+
+async function refreshDiscover() {
+  try {
+    const data = await api("/v1/public/articles?limit=48");
+    renderDiscover(data.articles || []);
+  } catch (err) { console.error("discover", err); }
+}
+function renderDiscover(articles) {
+  const grid = $("#discover-grid");
+  const empty = $("#discover-empty");
+  if (!articles.length) { grid.innerHTML = ""; empty.hidden = false; return; }
+  empty.hidden = true;
+  grid.innerHTML = articles.map((a) => `
+    <article class="broadcast-card" data-slug="${escapeHtml(a.slug)}" tabindex="0">
+      <div class="broadcast-card__cover">${escapeHtml(a.coverEmoji || "✦")}</div>
+      <div class="broadcast-card__main">
+        <h3 class="broadcast-card__title">${escapeHtml(a.title || "Untitled")}</h3>
+        <div class="broadcast-card__meta">
+          <span class="mono">${(a.wordCount || 0).toLocaleString()} words</span>
+          ${a.languages?.length ? `<span>·</span><span class="mono">${escapeHtml(a.languages.slice(0,5).join(" · "))}</span>` : ""}
+          <span>·</span><span>${formatRelative(a.publishedAt)}</span>
+        </div>
+        <p class="broadcast-card__excerpt">${escapeHtml(a.excerpt || a.subtitle || "")}</p>
+      </div>
+    </article>`).join("");
+  $$("#discover-grid .broadcast-card").forEach((el) => {
+    el.addEventListener("click", () => navigateToReader(el.dataset.slug));
+    el.addEventListener("keydown", (e) => { if (e.key === "Enter") navigateToReader(el.dataset.slug); });
+  });
+}
+
+
+/* ── Public reader (hash-routed: #/r/{slug}?lang=xx) ──────────────────── */
+
+function navigateToReader(slug) {
+  location.hash = `#/r/${encodeURIComponent(slug)}`;
+}
+
+function parseReaderHash() {
+  const h = location.hash || "";
+  const m = h.match(/^#\/r\/([^?]+)(?:\?(.*))?$/);
+  if (!m) return null;
+  const params = new URLSearchParams(m[2] || "");
+  return { slug: decodeURIComponent(m[1]), lang: params.get("lang") || undefined };
+}
+
+let _readerCurrentSlug = null;
+let _readerArticle = null;
+
+async function openReader(slug, lang) {
+  await showView("reader");
+  const stateEl = $("#reader-state");
+  const articleEl = $("#reader-article");
+  stateEl.hidden = false;
+  articleEl.hidden = true;
+  stateEl.innerHTML = `<div style="padding:60px 24px"><span class="spinner" style="width:18px;height:18px;border-width:3px"></span> <span style="margin-left:10px;color:var(--c-parch-3)">Loading…</span></div>`;
+  try {
+    const qs = lang ? `?lang=${encodeURIComponent(lang)}` : "";
+    const data = await api(`/v1/public/articles/${encodeURIComponent(slug)}${qs}`);
+    _readerCurrentSlug = slug;
+    _readerArticle = data;
+    stateEl.hidden = true;
+    articleEl.hidden = false;
+    renderReader(data, lang);
+    await loadReaderComments(slug);
+    // Fire a view (don't block on it)
+    fetch(`${API_BASE}/v1/public/articles/${encodeURIComponent(slug)}/view`, { method: "POST" }).catch(() => {});
+  } catch (err) {
+    stateEl.innerHTML = `<div style="padding:80px 24px">
+      <h2 class="display display--md" style="text-align:center">Not found</h2>
+      <p style="text-align:center;color:var(--c-parch-3);margin-top:8px">${escapeHtml(err.message || "This article isn't published.")}</p>
+      <p style="text-align:center;margin-top:24px"><a href="#" id="reader-back-home" style="color:var(--c-papyrus)">← Back to studio</a></p>
+    </div>`;
+    $("#reader-back-home")?.addEventListener("click", (e) => { e.preventDefault(); location.hash = ""; });
+  }
+}
+
+const RTL_READER = new Set(["ar", "fa", "he", "ur"]);
+
+function renderReader(a, currentLang) {
+  $("#reader-cover").textContent = a.coverEmoji || "✦";
+  $("#reader-title").textContent = a.title || "Untitled";
+  $("#reader-subtitle").textContent = a.subtitle || "";
+  $("#reader-subtitle").hidden = !a.subtitle;
+  $("#reader-author").textContent = a.authorName || "Unknown author";
+  $("#reader-date").textContent = a.publishedAt ? new Date(a.publishedAt).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }) : "";
+  const wc = a.wordCount || 0;
+  const minutes = Math.max(1, Math.round(wc / 220));
+  $("#reader-readtime").textContent = `${minutes} min read · ${wc.toLocaleString()} words`;
+
+  // Body
+  const bodyEl = $("#reader-body");
+  bodyEl.classList.toggle("is-rtl", RTL_READER.has((currentLang || a.lang || "").toLowerCase()));
+  const paragraphs = (a.body || "").split(/\n{2,}/).filter(Boolean);
+  bodyEl.innerHTML = paragraphs.map((p) => `<p>${escapeHtml(p)}</p>`).join("") || `<p style="color:var(--c-parch-3); font-style:italic">No content.</p>`;
+
+  // Language switcher
+  const langs = ["__src__", ...(a.availableLanguages || [])];
+  const rowEl = $("#reader-lang-row");
+  if (langs.length <= 1) {
+    rowEl.innerHTML = "";
+  } else {
+    rowEl.innerHTML = langs.map((code) => {
+      const isSrc = code === "__src__";
+      const display = isSrc ? "Source" : code;
+      const isActive = isSrc ? !currentLang : (currentLang === code);
+      return `<button class="reader-lang ${isActive ? "is-on" : ""}" data-lang="${isSrc ? "" : escapeHtml(code)}" type="button">${escapeHtml(display)}</button>`;
+    }).join("");
+    $$("#reader-lang-row .reader-lang").forEach((b) => b.addEventListener("click", () => {
+      const lang = b.dataset.lang;
+      const url = lang ? `#/r/${encodeURIComponent(_readerCurrentSlug)}?lang=${encodeURIComponent(lang)}` : `#/r/${encodeURIComponent(_readerCurrentSlug)}`;
+      location.hash = url;
+    }));
+  }
+
+  // Comment form visibility based on auth
+  const signedIn = !!(state.accessToken && state.user);
+  $("#reader-comment-form").hidden = !signedIn;
+  $("#reader-comment-signin").hidden = signedIn;
+}
+
+async function loadReaderComments(slug) {
+  try {
+    const data = await api(`/v1/public/articles/${encodeURIComponent(slug)}/comments`);
+    renderReaderComments(data.comments || []);
+  } catch (err) {
+    $("#reader-comments-list").innerHTML = `<div style="color:var(--c-parch-3);font-size:13px;padding:12px 0">Could not load comments.</div>`;
+  }
+}
+
+function renderReaderComments(comments) {
+  const list = $("#reader-comments-list");
+  $("#reader-comments-count").textContent = comments.length;
+  const myId = state.user?.userId;
+  const ownerId = _readerArticle?.authorId;
+  list.innerHTML = comments.map((c) => {
+    const canDelete = state.accessToken && (myId === c.authorId || myId === ownerId);
+    const date = c.createdAt ? new Date(c.createdAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
+    return `
+      <div class="reader-comment" data-id="${escapeHtml(c.commentId)}">
+        <header class="reader-comment__head">
+          <span class="reader-comment__author">${escapeHtml(c.authorName)}</span>
+          <span class="dot-sep">·</span>
+          <span class="reader-comment__date">${escapeHtml(date)}</span>
+          ${canDelete ? `<button class="reader-comment__delete" data-id="${escapeHtml(c.commentId)}" type="button">Delete</button>` : ""}
+        </header>
+        <p class="reader-comment__body">${escapeHtml(c.body)}</p>
+      </div>`;
+  }).join("") || `<div style="color:var(--c-parch-3);font-size:13px;padding:12px 0;font-style:italic">No comments yet — be the first.</div>`;
+  $$("#reader-comments-list .reader-comment__delete").forEach((b) => b.addEventListener("click", () => deleteReaderComment(b.dataset.id)));
+}
+
+async function postReaderComment() {
+  const slug = _readerCurrentSlug;
+  if (!slug) return;
+  const input = $("#reader-comment-input");
+  const body = (input.value || "").trim();
+  if (!body) return;
+  const btn = $("#reader-comment-submit");
+  btn.disabled = true;
+  try {
+    await api(`/v1/articles/by-slug/${encodeURIComponent(slug)}/comments`, { method: "POST", body: { body } });
+    input.value = "";
+    await loadReaderComments(slug);
+    toast("Comment posted", "success");
+  } catch (err) { toast(err.message, "error"); }
+  finally { btn.disabled = false; }
+}
+
+async function deleteReaderComment(commentId) {
+  if (!confirm("Delete this comment?")) return;
+  try {
+    await api(`/v1/articles/by-slug/${encodeURIComponent(_readerCurrentSlug)}/comments/${commentId}`, { method: "DELETE" });
+    await loadReaderComments(_readerCurrentSlug);
+  } catch (err) { toast(err.message, "error"); }
+}
+
+function wireReaderOnce() {
+  $("#reader-comment-submit").addEventListener("click", postReaderComment);
+  $("#reader-signin").addEventListener("click", () => { location.hash = ""; });
+  $("#reader-brand").addEventListener("click", (e) => { e.preventDefault(); location.hash = ""; });
+  $("#reader-share").addEventListener("click", async () => {
+    if (!_readerCurrentSlug) return;
+    const url = `${location.origin}/#/r/${encodeURIComponent(_readerCurrentSlug)}`;
+    if (navigator.share) {
+      try { await navigator.share({ title: _readerArticle?.title || "BookTwoLang", url }); return; } catch (_) {}
+    }
+    try { await navigator.clipboard.writeText(url); toast("Link copied", "success"); }
+    catch (_) { toast("Copy failed", "error"); }
+  });
+  window.addEventListener("hashchange", routeFromHash);
+}
+
+function routeFromHash() {
+  const r = parseReaderHash();
+  if (r) {
+    openReader(r.slug, r.lang);
+    return true;
+  }
+  // No hash and we're sitting on the reader → return home
+  if (state.view === "reader") {
+    const start = state.user ? (state.workspace || "library") : "auth";
+    showView(start);
+  }
+  return false;
+}
+
+
+/* Publish-success overlay */
+function showPublishSuccess(article) {
+  if (!article?.slug) return;
+  const url = `${location.origin}/#/r/${encodeURIComponent(article.slug)}`;
+  $("#publish-cover").textContent = article.coverEmoji || "✦";
+  $("#publish-title").textContent = article.title || "Untitled";
+  $("#publish-url").value = url;
+  $("#publish-overlay").hidden = false;
 }
 
 
@@ -2861,7 +3105,15 @@ document.addEventListener("DOMContentLoaded", () => {
   wireNexusOnce();
   wireVaultOnce();
   wireBroadcastOnce();
+  wireReaderOnce();
   renderNav();
+
+  // Public reader URL? Open it regardless of auth state.
+  const readerRoute = parseReaderHash();
+  if (readerRoute) {
+    openReader(readerRoute.slug, readerRoute.lang);
+    return;
+  }
 
   if (!isAuthed) {
     showView("auth");

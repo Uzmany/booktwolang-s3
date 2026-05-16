@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal
 
 import boto3
 from boto3.dynamodb.conditions import Key
@@ -22,6 +23,15 @@ from pydantic import BaseModel, Field
 
 from .ai import AIError, gemini_complete
 from .users import get_current_user
+
+
+def _dec(v) -> Decimal:
+    """boto3's DynamoDB resource rejects Python floats — coordinates must
+    round-trip through ``Decimal``. We go via ``str`` to avoid binary-fp
+    surprises."""
+    if v is None:
+        return Decimal("0")
+    return Decimal(str(v))
 
 REGION = os.getenv("AWS_REGION", "us-east-1")
 _dynamodb = boto3.resource("dynamodb", region_name=REGION)
@@ -227,10 +237,10 @@ def create_node(canvas_id: str, body: NodeCreate, current_user: dict = Depends(g
         "SK": f"NODE#{node_id}",
         "nodeId": node_id,
         "type": body.type[:40],
-        "x": float(body.x),
-        "y": float(body.y),
-        "w": float(body.w),
-        "h": float(body.h),
+        "x": _dec(body.x),
+        "y": _dec(body.y),
+        "w": _dec(body.w),
+        "h": _dec(body.h),
         "title": body.title[:120],
         "content": body.content[:8000],
         "accent": body.accent[:20],
@@ -255,7 +265,7 @@ def update_node(canvas_id: str, node_id: str, body: NodeUpdate, current_user: di
     for field in ("x", "y", "w", "h"):
         val = getattr(body, field)
         if val is not None:
-            updates[field] = float(val)
+            updates[field] = _dec(val)
     for field in ("title", "content", "accent"):
         val = getattr(body, field)
         if val is not None:

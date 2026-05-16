@@ -233,7 +233,7 @@ $("#new-translate-btn").addEventListener("click", async () => {
       fd.append("file", file);
       fd.append("title", title);
       fd.append("sourceLang", sourceLang);
-      doc = await api("/v1/documents", { method: "POST", body: fd });
+      doc = await api("/v1/documents/upload", { method: "POST", body: fd });
     } else {
       const sourceText = $("#new-text").value.trim();
       if (!sourceText) throw new Error("Paste some text or pick a file first.");

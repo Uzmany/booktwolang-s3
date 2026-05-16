@@ -202,28 +202,12 @@ def _persist_source(doc_id: str, source_text: str) -> int:
     return len(chunks)
 
 
-@app.post("/v1/documents", status_code=status.HTTP_201_CREATED)
-async def create_document(
-    body: CreateDocRequest | None = None,
-    file: UploadFile | None = File(default=None),
-    title: str | None = Form(default=None),
-    sourceLang: str | None = Form(default=None),
-    current_user: dict = Depends(get_current_user),
-):
-    if file is not None:
-        raw = await file.read()
-        if len(raw) > MAX_UPLOAD_BYTES:
-            raise HTTPException(413, f"File too large (max {MAX_UPLOAD_BYTES // 1024 // 1024}MB)")
-        text = _extract_text(file.filename or "", raw)
-        doc_title = title or (file.filename or "Untitled").rsplit(".", 1)[0][:200]
-        source_lang = (sourceLang or "auto")[:20]
-    elif body is not None:
-        text = body.sourceText
-        doc_title = body.title[:200]
-        source_lang = body.sourceLang[:20]
-    else:
-        raise HTTPException(400, "Provide either JSON body or multipart file upload")
-
+def _create_doc_record(
+    user_id: str,
+    text: str,
+    title: str,
+    source_lang: str,
+) -> dict:
     text = (text or "").strip()
     if not text:
         raise HTTPException(400, "Source text is empty")
@@ -237,9 +221,9 @@ async def create_document(
         "PK": _doc_pk(doc_id),
         "SK": "META",
         "docId": doc_id,
-        "title": doc_title,
-        "ownerId": current_user["userId"],
-        "sourceLang": source_lang,
+        "title": (title or "Untitled")[:200],
+        "ownerId": user_id,
+        "sourceLang": (source_lang or "auto")[:20],
         "targetLang": None,
         "status": "ready",
         "sourceChars": len(text),
@@ -247,10 +231,45 @@ async def create_document(
         "completedChunks": 0,
         "createdAt": created_at,
         "updatedAt": created_at,
-        "GSI1PK": f"USER#{current_user['userId']}",
+        "GSI1PK": f"USER#{user_id}",
         "GSI1SK": created_at,
     }
     documents_table.put_item(Item=meta)
+    return meta
+
+
+@app.post("/v1/documents", status_code=status.HTTP_201_CREATED)
+def create_document(
+    body: CreateDocRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    meta = _create_doc_record(
+        user_id=current_user["userId"],
+        text=body.sourceText,
+        title=body.title,
+        source_lang=body.sourceLang,
+    )
+    return _meta_to_public(meta)
+
+
+@app.post("/v1/documents/upload", status_code=status.HTTP_201_CREATED)
+async def upload_document(
+    file: UploadFile = File(...),
+    title: str = Form(default=""),
+    sourceLang: str = Form(default="auto"),
+    current_user: dict = Depends(get_current_user),
+):
+    raw = await file.read()
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, f"File too large (max {MAX_UPLOAD_BYTES // 1024 // 1024}MB)")
+    text = _extract_text(file.filename or "", raw)
+    doc_title = title or (file.filename or "Untitled").rsplit(".", 1)[0]
+    meta = _create_doc_record(
+        user_id=current_user["userId"],
+        text=text,
+        title=doc_title,
+        source_lang=sourceLang,
+    )
     return _meta_to_public(meta)
 
 

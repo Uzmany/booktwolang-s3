@@ -4,177 +4,199 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>BookTwoLang — AI document translation</title>
-    <meta name="description" content="Translate documents and books between 30+ languages with AI. Paste text or upload .txt/.docx files." />
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='12' fill='%230d9488'/><text x='50%25' y='54%25' text-anchor='middle' fill='white' font-family='ui-sans-serif,system-ui,sans-serif' font-size='34' font-weight='700' dominant-baseline='middle'>B2</text></svg>" />
+    <meta name="description" content="Drop a document, get a translation. 30+ languages, powered by Gemini." />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%23111111'/><path d='M16 20 L48 20 M16 32 L48 32 M16 44 L36 44' stroke='%232dd4bf' stroke-width='4' stroke-linecap='round'/></svg>" />
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
         theme: {
           extend: {
             colors: {
-              ink: { 50: '#f1f5f9', 200: '#cbd5e1', 400: '#94a3b8', 500: '#64748b', 700: '#334155', 800: '#1e293b', 900: '#0f172a', 950: '#020617' },
-              brand: { 400: '#2dd4bf', 500: '#14b8a6', 600: '#0d9488', 700: '#0f766e' },
+              brand: { 300: '#5eead4', 400: '#2dd4bf', 500: '#14b8a6', 600: '#0d9488' },
             },
-            fontFamily: { sans: ['"Inter"', 'ui-sans-serif', 'system-ui', 'sans-serif'] },
+            fontFamily: {
+              sans: ['"Inter"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+              mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+            },
+            animation: {
+              'fade-in': 'fadeIn 200ms ease-out',
+              'slide-up': 'slideUp 240ms cubic-bezier(0.16,1,0.3,1)',
+              'pulse-soft': 'pulseSoft 1.6s ease-in-out infinite',
+            },
+            keyframes: {
+              fadeIn: { from: { opacity: 0 }, to: { opacity: 1 } },
+              slideUp: { from: { opacity: 0, transform: 'translateY(6px)' }, to: { opacity: 1, transform: 'translateY(0)' } },
+              pulseSoft: { '0%,100%': { opacity: 0.4 }, '50%': { opacity: 1 } },
+            },
           },
         },
       };
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
     <style>
-      html, body { height: 100%; }
-      body { background: radial-gradient(1200px 600px at 80% -10%, rgba(20,184,166,0.10), transparent 60%), #020617; color: #e2e8f0; }
-      .glass { background: rgba(15, 23, 42, 0.65); backdrop-filter: saturate(140%) blur(8px); }
-      .scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
-      .scrollbar::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.25); border-radius: 999px; }
-      textarea { font-family: 'Inter', ui-sans-serif, system-ui, sans-serif; }
+      :root { color-scheme: dark; }
+      html, body { background: #0a0a0a; color: #fafafa; }
+      body {
+        background-image:
+          radial-gradient(800px 400px at 75% -10%, rgba(45,212,191,0.06), transparent 60%),
+          radial-gradient(900px 500px at 10% 110%, rgba(45,212,191,0.04), transparent 60%);
+        background-attachment: fixed;
+        min-height: 100vh;
+        font-feature-settings: 'cv11','ss01','ss03';
+      }
+      .glass { background: rgba(10,10,10,0.7); backdrop-filter: saturate(160%) blur(10px); }
+      .scrollbar::-webkit-scrollbar { width: 10px; height: 10px; }
+      .scrollbar::-webkit-scrollbar-track { background: transparent; }
+      .scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
+      .scrollbar::-webkit-scrollbar-thumb:hover { background-color: rgba(255,255,255,0.16); }
       [hidden] { display: none !important; }
+
+      .dropzone { transition: border-color 200ms ease, background-color 200ms ease, transform 200ms ease; }
+      .dropzone.is-dragging { border-color: rgb(45,212,191); background-color: rgba(45,212,191,0.06); transform: scale(1.01); }
+      .dropzone.is-uploading { border-style: solid; border-color: rgb(45,212,191); }
+
+      .doc-card { transition: border-color 180ms ease, background-color 180ms ease; }
+      .doc-card:hover { border-color: rgba(255,255,255,0.18); background-color: rgba(255,255,255,0.03); }
+
+      .spinner {
+        width: 12px; height: 12px; border-radius: 999px;
+        border: 2px solid rgba(255,255,255,0.18);
+        border-top-color: rgb(45,212,191);
+        animation: spin 700ms linear infinite;
+        display: inline-block; vertical-align: -2px;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+
+      select { background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>"); background-repeat: no-repeat; background-position: right 0.5rem center; background-size: 14px; appearance: none; -webkit-appearance: none; padding-right: 1.75rem; }
+
+      .lang-picker {
+        background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1);
+        color: rgb(245,245,245); border-radius: 9999px; padding: 6px 32px 6px 14px; font-size: 13px;
+        font-weight: 500; cursor: pointer;
+      }
+      .lang-picker:hover { background: rgba(255,255,255,0.08); }
     </style>
   </head>
   <body class="font-sans antialiased">
-    <header class="border-b border-white/5 sticky top-0 z-20 glass">
-      <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
-        <a href="/" class="flex items-center gap-2 text-white font-semibold tracking-tight">
-          <span class="inline-flex items-center justify-center w-7 h-7 rounded-md bg-brand-600 text-white text-sm">B2</span>
+    <header class="sticky top-0 z-30 glass border-b border-white/[0.06]">
+      <div class="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between gap-4">
+        <a href="/" class="flex items-center gap-2.5 text-white font-semibold tracking-tight">
+          <span class="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-zinc-900 border border-white/[0.08]">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" class="text-brand-400"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+          </span>
           BookTwoLang
         </a>
         <nav id="nav-actions" class="flex items-center gap-2 text-sm"></nav>
       </div>
     </header>
 
-    <main class="max-w-6xl mx-auto px-6 py-10">
-      <!-- AUTH VIEW -->
-      <section id="view-auth" class="grid md:grid-cols-2 gap-10 items-center">
-        <div>
-          <h1 class="text-4xl md:text-5xl font-bold leading-tight text-white">Translate entire books with one click.</h1>
-          <p class="mt-4 text-ink-200 text-lg max-w-prose">Paste text or upload a <code class="text-brand-400">.txt</code> / <code class="text-brand-400">.docx</code> document. BookTwoLang chunks long writing on paragraph boundaries and translates each piece with Gemini, so even novel-length manuscripts come out coherent.</p>
-          <ul class="mt-6 space-y-2 text-ink-200 text-sm">
-            <li class="flex gap-2"><span class="text-brand-400">›</span> 30+ language pairs</li>
-            <li class="flex gap-2"><span class="text-brand-400">›</span> Live progress while long docs translate</li>
-            <li class="flex gap-2"><span class="text-brand-400">›</span> Your documents stay in your account</li>
-          </ul>
+    <!-- ===================== AUTH ===================== -->
+    <section id="view-auth" class="min-h-[calc(100vh-3.5rem)] grid place-items-center px-6 py-12">
+      <div class="w-full max-w-sm animate-fade-in">
+        <div class="text-center mb-8">
+          <h1 class="text-3xl font-semibold tracking-tight text-white">Translate any document.</h1>
+          <p class="mt-2 text-zinc-400 text-sm">30+ languages. Books welcome.</p>
         </div>
-        <div class="glass border border-white/10 rounded-xl p-6 md:p-8">
-          <div class="flex gap-2 mb-6 text-sm">
-            <button id="tab-login" class="px-3 py-1.5 rounded-md bg-white/10 text-white" type="button">Log in</button>
-            <button id="tab-signup" class="px-3 py-1.5 rounded-md text-ink-200 hover:bg-white/5" type="button">Sign up</button>
+
+        <div class="bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6">
+          <div class="flex items-center gap-1 mb-5 text-sm bg-black/30 border border-white/[0.06] rounded-lg p-1">
+            <button id="tab-login" type="button" class="flex-1 px-3 py-1.5 rounded-md text-white bg-white/[0.06]">Log in</button>
+            <button id="tab-signup" type="button" class="flex-1 px-3 py-1.5 rounded-md text-zinc-400 hover:text-white transition-colors">Sign up</button>
           </div>
 
           <form id="form-login" class="space-y-3" onsubmit="event.preventDefault(); window.handleLogin();">
-            <label class="block text-sm">
-              <span class="text-ink-200">Email</span>
-              <input name="email" type="email" required autocomplete="email"
-                class="mt-1 w-full px-3 py-2 rounded-md bg-ink-900/60 border border-white/10 text-white outline-none focus:border-brand-500" />
-            </label>
-            <label class="block text-sm">
-              <span class="text-ink-200">Password</span>
-              <input name="password" type="password" required autocomplete="current-password"
-                class="mt-1 w-full px-3 py-2 rounded-md bg-ink-900/60 border border-white/10 text-white outline-none focus:border-brand-500" />
-            </label>
-            <button type="submit" class="w-full mt-2 px-4 py-2 rounded-md bg-brand-600 hover:bg-brand-500 text-white font-medium">Log in</button>
-            <p id="login-error" class="text-sm text-red-400" hidden></p>
+            <input name="email" type="email" required autocomplete="email" placeholder="Email"
+              class="w-full px-3.5 py-2.5 rounded-xl bg-black/40 border border-white/[0.08] text-white placeholder:text-zinc-500 outline-none focus:border-brand-400 transition-colors" />
+            <input name="password" type="password" required autocomplete="current-password" placeholder="Password"
+              class="w-full px-3.5 py-2.5 rounded-xl bg-black/40 border border-white/[0.08] text-white placeholder:text-zinc-500 outline-none focus:border-brand-400 transition-colors" />
+            <button type="submit" class="w-full mt-1 px-4 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-400 text-zinc-950 font-semibold transition-colors">Log in</button>
+            <p id="login-error" class="text-sm text-red-400 text-center" hidden></p>
           </form>
 
           <form id="form-signup" class="space-y-3" hidden onsubmit="event.preventDefault(); window.handleSignup();">
-            <label class="block text-sm">
-              <span class="text-ink-200">Display name</span>
-              <input name="displayName" type="text" maxlength="80"
-                class="mt-1 w-full px-3 py-2 rounded-md bg-ink-900/60 border border-white/10 text-white outline-none focus:border-brand-500" />
-            </label>
-            <label class="block text-sm">
-              <span class="text-ink-200">Email</span>
-              <input name="email" type="email" required autocomplete="email"
-                class="mt-1 w-full px-3 py-2 rounded-md bg-ink-900/60 border border-white/10 text-white outline-none focus:border-brand-500" />
-            </label>
-            <label class="block text-sm">
-              <span class="text-ink-200">Password</span>
-              <input name="password" type="password" required minlength="8" autocomplete="new-password"
-                class="mt-1 w-full px-3 py-2 rounded-md bg-ink-900/60 border border-white/10 text-white outline-none focus:border-brand-500" />
-            </label>
-            <button type="submit" class="w-full mt-2 px-4 py-2 rounded-md bg-brand-600 hover:bg-brand-500 text-white font-medium">Create account</button>
-            <p id="signup-error" class="text-sm text-red-400" hidden></p>
+            <input name="displayName" type="text" maxlength="80" placeholder="Display name (optional)"
+              class="w-full px-3.5 py-2.5 rounded-xl bg-black/40 border border-white/[0.08] text-white placeholder:text-zinc-500 outline-none focus:border-brand-400 transition-colors" />
+            <input name="email" type="email" required autocomplete="email" placeholder="Email"
+              class="w-full px-3.5 py-2.5 rounded-xl bg-black/40 border border-white/[0.08] text-white placeholder:text-zinc-500 outline-none focus:border-brand-400 transition-colors" />
+            <input name="password" type="password" required minlength="8" autocomplete="new-password" placeholder="Password (min 8 chars)"
+              class="w-full px-3.5 py-2.5 rounded-xl bg-black/40 border border-white/[0.08] text-white placeholder:text-zinc-500 outline-none focus:border-brand-400 transition-colors" />
+            <button type="submit" class="w-full mt-1 px-4 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-400 text-zinc-950 font-semibold transition-colors">Create account</button>
+            <p id="signup-error" class="text-sm text-red-400 text-center" hidden></p>
           </form>
         </div>
-      </section>
 
-      <!-- APP VIEW -->
-      <section id="view-app" hidden>
-        <div class="grid md:grid-cols-[1fr_2fr] gap-6">
-          <aside class="glass border border-white/10 rounded-xl p-4 max-h-[calc(100vh-9rem)] overflow-auto scrollbar">
-            <div class="flex items-center justify-between mb-3">
-              <h2 class="text-sm font-semibold text-ink-200 uppercase tracking-wider">Your documents</h2>
-              <button id="new-doc-btn" class="text-xs text-brand-400 hover:text-brand-300" type="button">+ new</button>
+        <p class="mt-4 text-center text-xs text-zinc-500">Powered by Gemini. Files stay in your account.</p>
+      </div>
+    </section>
+
+    <!-- ===================== APP ===================== -->
+    <section id="view-app" hidden>
+      <div class="max-w-5xl mx-auto px-6 pt-12 pb-24">
+        <!-- HERO -->
+        <div class="animate-fade-in">
+          <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-6">
+            <h1 class="text-3xl md:text-4xl font-semibold tracking-tight text-white">Translate to</h1>
+            <div class="relative">
+              <select id="global-target-lang" class="lang-picker text-base md:text-lg font-semibold"></select>
             </div>
-            <ul id="doc-list" class="space-y-1"></ul>
-            <p id="doc-list-empty" class="text-sm text-ink-400 mt-2" hidden>Nothing yet — paste some text on the right to begin.</p>
-          </aside>
+          </div>
 
-          <div class="space-y-6">
-            <div class="glass border border-white/10 rounded-xl p-5">
-              <div class="flex flex-wrap items-end gap-3">
-                <label class="grow text-sm">
-                  <span class="text-ink-200">Title</span>
-                  <input id="new-title" type="text" placeholder="My document"
-                    class="mt-1 w-full px-3 py-2 rounded-md bg-ink-900/60 border border-white/10 text-white outline-none focus:border-brand-500" />
-                </label>
-                <label class="text-sm">
-                  <span class="text-ink-200">Source</span>
-                  <select id="new-source-lang" class="mt-1 px-3 py-2 rounded-md bg-ink-900/60 border border-white/10 text-white outline-none focus:border-brand-500">
-                    <option value="auto">Auto-detect</option>
-                  </select>
-                </label>
-                <label class="text-sm">
-                  <span class="text-ink-200">Target</span>
-                  <select id="new-target-lang" class="mt-1 px-3 py-2 rounded-md bg-ink-900/60 border border-white/10 text-white outline-none focus:border-brand-500"></select>
-                </label>
-                <label class="text-sm cursor-pointer">
-                  <span class="text-ink-200">File</span>
-                  <input id="new-file" type="file" accept=".txt,.docx" class="mt-1 block text-xs text-ink-200 file:mr-2 file:px-3 file:py-1.5 file:rounded-md file:border-0 file:bg-white/10 file:text-white" />
-                </label>
+          <!-- DROPZONE -->
+          <div id="dropzone" class="dropzone relative rounded-2xl border-2 border-dashed border-white/[0.12] bg-white/[0.015] p-10 md:p-12 text-center cursor-pointer group">
+            <input id="file-input" type="file" accept=".txt,.docx" multiple class="absolute inset-0 opacity-0 cursor-pointer" />
+            <div class="pointer-events-none">
+              <div class="mx-auto mb-4 w-12 h-12 rounded-2xl bg-white/[0.04] border border-white/[0.08] grid place-items-center group-hover:border-brand-400/40 transition-colors">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="text-brand-400">
+                  <path d="M12 3v14"/><path d="M5 10l7-7 7 7"/><path d="M5 21h14"/>
+                </svg>
               </div>
-              <textarea id="new-text" rows="10" placeholder="Paste text here, or pick a .txt / .docx file above…"
-                class="mt-3 w-full px-3 py-2 rounded-md bg-ink-900/60 border border-white/10 text-white outline-none focus:border-brand-500 scrollbar"></textarea>
-              <div class="mt-3 flex items-center justify-between gap-3">
-                <p id="new-status" class="text-xs text-ink-400"></p>
-                <button id="new-translate-btn" type="button" class="px-4 py-2 rounded-md bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium">Translate</button>
-              </div>
+              <p class="text-white font-medium">Drop a document to translate</p>
+              <p class="mt-1 text-sm text-zinc-400">or click to choose — <span class="font-mono text-xs">.txt</span> or <span class="font-mono text-xs">.docx</span>, up to 5&nbsp;MB</p>
             </div>
+          </div>
 
-            <div id="doc-detail" class="glass border border-white/10 rounded-xl p-5" hidden>
-              <div class="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h3 id="doc-title" class="text-lg font-semibold text-white"></h3>
-                  <p id="doc-meta" class="text-xs text-ink-400 mt-0.5"></p>
-                </div>
-                <div class="flex items-center gap-2 text-sm">
-                  <span id="doc-status-pill" class="px-2 py-1 rounded-md bg-white/5 text-ink-200"></span>
-                  <button id="doc-download" type="button" class="px-3 py-1.5 rounded-md bg-white/10 hover:bg-white/15 text-white">Download .txt</button>
-                  <button id="doc-delete" type="button" class="px-3 py-1.5 rounded-md bg-red-600/30 hover:bg-red-600/50 text-red-100">Delete</button>
-                </div>
+          <!-- PASTE TOGGLE -->
+          <div class="mt-3 flex items-center justify-center gap-3 text-xs text-zinc-500">
+            <span class="h-px flex-1 bg-white/[0.06]"></span>
+            <button id="toggle-paste" type="button" class="hover:text-zinc-300 transition-colors">or paste text instead</button>
+            <span class="h-px flex-1 bg-white/[0.06]"></span>
+          </div>
+
+          <div id="paste-panel" hidden class="mt-4 bg-white/[0.02] border border-white/[0.08] rounded-2xl p-4 animate-slide-up">
+            <textarea id="paste-text" rows="6" placeholder="Paste any text — a paragraph, a chapter, a chat log…"
+              class="w-full px-3 py-2 rounded-xl bg-black/40 border border-white/[0.08] text-white placeholder:text-zinc-500 outline-none focus:border-brand-400 transition-colors scrollbar text-sm leading-relaxed"></textarea>
+            <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
+              <div class="flex items-center gap-2 text-xs text-zinc-400">
+                <span>Source</span>
+                <select id="paste-source-lang" class="px-2 py-1 rounded-lg bg-black/40 border border-white/[0.08] text-white text-xs">
+                  <option value="auto">Auto-detect</option>
+                </select>
               </div>
-              <div id="doc-progress-row" class="mt-3" hidden>
-                <div class="h-1.5 w-full rounded-full bg-white/5 overflow-hidden">
-                  <div id="doc-progress-bar" class="h-full bg-brand-500 transition-all" style="width: 0%"></div>
-                </div>
-                <p id="doc-progress-text" class="mt-1 text-xs text-ink-400"></p>
-              </div>
-              <div class="mt-4 grid md:grid-cols-2 gap-3">
-                <div>
-                  <h4 class="text-xs uppercase tracking-wider text-ink-400 mb-1">Source</h4>
-                  <pre id="doc-source-pre" class="whitespace-pre-wrap text-sm text-ink-200 bg-ink-900/60 border border-white/10 rounded-md p-3 max-h-[60vh] overflow-auto scrollbar"></pre>
-                </div>
-                <div>
-                  <h4 class="text-xs uppercase tracking-wider text-ink-400 mb-1">Translation</h4>
-                  <pre id="doc-translated-pre" class="whitespace-pre-wrap text-sm text-white bg-ink-900/60 border border-white/10 rounded-md p-3 max-h-[60vh] overflow-auto scrollbar"></pre>
-                </div>
-              </div>
+              <button id="paste-translate" type="button" class="px-4 py-2 rounded-xl bg-brand-500 hover:bg-brand-400 text-zinc-950 text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed">Translate</button>
             </div>
           </div>
         </div>
-      </section>
-    </main>
+
+        <!-- HISTORY -->
+        <div class="mt-14">
+          <div class="flex items-end justify-between mb-4">
+            <h2 class="text-sm uppercase tracking-[0.12em] text-zinc-500 font-medium">Your translations</h2>
+            <span id="history-count" class="text-xs text-zinc-500 font-mono"></span>
+          </div>
+
+          <div id="doc-cards" class="grid grid-cols-1 gap-3"></div>
+
+          <div id="empty-state" class="text-center py-16 text-zinc-500 text-sm" hidden>
+            Nothing yet. Drop a file above to begin.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Toast container -->
+    <div id="toasts" class="fixed bottom-6 right-6 z-50 space-y-2 pointer-events-none"></div>
 
     <script src="/public/assets/js/app.js"></script>
   </body>

@@ -2,202 +2,584 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>BookTwoLang — AI document translation</title>
-    <meta name="description" content="Drop a document, get a translation. 30+ languages, powered by Gemini." />
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%23111111'/><path d='M16 20 L48 20 M16 32 L48 32 M16 44 L36 44' stroke='%232dd4bf' stroke-width='4' stroke-linecap='round'/></svg>" />
-    <script src="https://cdn.tailwindcss.com"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0A0A0B" />
+    <title>BookTwoLang — A Modern Literary Studio for AI Translation</title>
+    <meta name="description" content="Drop a manuscript. Uncover a new world. End-to-end AI translation of books, PDFs, and technical documents — formatting preserved, tone tunable." />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><defs><radialGradient id='g' cx='50%25' cy='35%25' r='65%25'><stop offset='0%25' stop-color='%23F5D789'/><stop offset='100%25' stop-color='%23B89240'/></radialGradient></defs><rect width='64' height='64' rx='14' fill='%230A0A0B'/><path d='M18 18 h28 M18 32 h28 M18 46 h18' stroke='url(%23g)' stroke-width='4' stroke-linecap='round'/></svg>" />
+
+    <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
     <script>
       tailwind.config = {
+        darkMode: 'class',
         theme: {
           extend: {
             colors: {
-              brand: { 300: '#5eead4', 400: '#2dd4bf', 500: '#14b8a6', 600: '#0d9488' },
+              obsidian: { DEFAULT: '#0A0A0B', 50: '#1A1A1D', 100: '#121214', 200: '#0E0E10', 300: '#0A0A0B' },
+              parchment: { DEFAULT: '#A8A89D', light: '#D4D4CB', dim: '#7B7B72' },
+              papyrus: { DEFAULT: '#E8C063', glow: '#F5D789', deep: '#B89240', muted: '#8C6F30' },
+              biolume: { DEFAULT: '#6FE8D2', glow: '#A8F2E2', deep: '#34A893' },
+              ember: { DEFAULT: '#E27B5C', glow: '#F2A68C' },
             },
             fontFamily: {
+              serif: ['"Playfair Display"', '"Source Serif 4"', 'Georgia', 'serif'],
               sans: ['"Inter"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
               mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'monospace'],
             },
+            letterSpacing: {
+              'tightest': '-0.04em',
+              'eyebrow': '0.22em',
+            },
+            boxShadow: {
+              'glow-papyrus': '0 0 0 1px rgba(232,192,99,0.25), 0 12px 40px -12px rgba(232,192,99,0.45), 0 0 80px -20px rgba(232,192,99,0.35)',
+              'glow-biolume': '0 0 0 1px rgba(111,232,210,0.25), 0 8px 32px -8px rgba(111,232,210,0.4)',
+              'inset-edge': 'inset 0 1px 0 rgba(255,255,255,0.04), inset 0 -1px 0 rgba(0,0,0,0.4)',
+              'studio': '0 30px 80px -30px rgba(0,0,0,0.8), 0 0 0 1px rgba(255,255,255,0.04)',
+            },
             animation: {
-              'fade-in': 'fadeIn 200ms ease-out',
-              'slide-up': 'slideUp 240ms cubic-bezier(0.16,1,0.3,1)',
-              'pulse-soft': 'pulseSoft 1.6s ease-in-out infinite',
+              'fade-in': 'fadeIn 320ms cubic-bezier(0.22, 1, 0.36, 1) both',
+              'fade-in-slow': 'fadeIn 800ms ease-out both',
+              'rise': 'rise 480ms cubic-bezier(0.22, 1, 0.36, 1) both',
+              'rise-fast': 'rise 280ms cubic-bezier(0.22, 1, 0.36, 1) both',
+              'pulse-glow': 'pulseGlow 2.4s ease-in-out infinite',
+              'breathe': 'breathe 4s ease-in-out infinite',
+              'drift-1': 'drift1 22s ease-in-out infinite',
+              'drift-2': 'drift2 28s ease-in-out infinite',
+              'morph': 'morph 12s ease-in-out infinite',
+              'scan': 'scan 1400ms cubic-bezier(0.6,0,0.4,1) forwards',
+              'shimmer': 'shimmer 2.4s linear infinite',
+              'spin-slow': 'spin 18s linear infinite',
             },
             keyframes: {
               fadeIn: { from: { opacity: 0 }, to: { opacity: 1 } },
-              slideUp: { from: { opacity: 0, transform: 'translateY(6px)' }, to: { opacity: 1, transform: 'translateY(0)' } },
-              pulseSoft: { '0%,100%': { opacity: 0.4 }, '50%': { opacity: 1 } },
+              rise: { from: { opacity: 0, transform: 'translateY(12px)' }, to: { opacity: 1, transform: 'translateY(0)' } },
+              pulseGlow: { '0%,100%': { opacity: 0.6, transform: 'scale(1)' }, '50%': { opacity: 1, transform: 'scale(1.02)' } },
+              breathe: { '0%,100%': { opacity: 0.55 }, '50%': { opacity: 1 } },
+              drift1: { '0%,100%': { transform: 'translate3d(0,0,0) rotate(-4deg)' }, '50%': { transform: 'translate3d(20px,-30px,0) rotate(2deg)' } },
+              drift2: { '0%,100%': { transform: 'translate3d(0,0,0) rotate(3deg)' }, '50%': { transform: 'translate3d(-25px,-20px,0) rotate(-3deg)' } },
+              morph: {
+                '0%,100%':   { opacity: 0, transform: 'scale(0.94) blur(2px)' },
+                '8%, 22%':   { opacity: 1, transform: 'scale(1) blur(0)' },
+                '30%':       { opacity: 0, transform: 'scale(1.08) blur(2px)' },
+              },
+              scan: { from: { transform: 'translateY(-105%)' }, to: { transform: 'translateY(105%)' } },
+              shimmer: { from: { backgroundPosition: '-200% 0' }, to: { backgroundPosition: '200% 0' } },
             },
           },
         },
       };
     </script>
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-    <style>
-      :root { color-scheme: dark; }
-      html, body { background: #0a0a0a; color: #fafafa; }
-      body {
-        background-image:
-          radial-gradient(800px 400px at 75% -10%, rgba(45,212,191,0.06), transparent 60%),
-          radial-gradient(900px 500px at 10% 110%, rgba(45,212,191,0.04), transparent 60%);
-        background-attachment: fixed;
-        min-height: 100vh;
-        font-feature-settings: 'cv11','ss01','ss03';
-      }
-      .glass { background: rgba(10,10,10,0.7); backdrop-filter: saturate(160%) blur(10px); }
-      .scrollbar::-webkit-scrollbar { width: 10px; height: 10px; }
-      .scrollbar::-webkit-scrollbar-track { background: transparent; }
-      .scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
-      .scrollbar::-webkit-scrollbar-thumb:hover { background-color: rgba(255,255,255,0.16); }
-      [hidden] { display: none !important; }
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,500;1,600&family=Noto+Sans+JP:wght@400;700&family=Noto+Sans+Arabic:wght@400;700&family=Noto+Serif+Devanagari:wght@400;700&display=swap" rel="stylesheet" />
 
-      .dropzone { transition: border-color 200ms ease, background-color 200ms ease, transform 200ms ease; }
-      .dropzone.is-dragging { border-color: rgb(45,212,191); background-color: rgba(45,212,191,0.06); transform: scale(1.01); }
-      .dropzone.is-uploading { border-style: solid; border-color: rgb(45,212,191); }
+    <link rel="stylesheet" href="/public/assets/css/studio.css" />
 
-      .doc-card { transition: border-color 180ms ease, background-color 180ms ease; }
-      .doc-card:hover { border-color: rgba(255,255,255,0.18); background-color: rgba(255,255,255,0.03); }
-
-      .spinner {
-        width: 12px; height: 12px; border-radius: 999px;
-        border: 2px solid rgba(255,255,255,0.18);
-        border-top-color: rgb(45,212,191);
-        animation: spin 700ms linear infinite;
-        display: inline-block; vertical-align: -2px;
-      }
-      @keyframes spin { to { transform: rotate(360deg); } }
-
-      select { background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>"); background-repeat: no-repeat; background-position: right 0.5rem center; background-size: 14px; appearance: none; -webkit-appearance: none; padding-right: 1.75rem; }
-
-      .lang-picker {
-        background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1);
-        color: rgb(245,245,245); border-radius: 9999px; padding: 6px 32px 6px 14px; font-size: 13px;
-        font-weight: 500; cursor: pointer;
-      }
-      .lang-picker:hover { background: rgba(255,255,255,0.08); }
-    </style>
+    <script>
+      // Pre-paint: pick the right initial view so the cinematic auth
+      // backdrop doesn't flash the topbar before app.js boots.
+      (function () {
+        try {
+          var hasToken = !!localStorage.getItem('btl_access_token_v2');
+          document.documentElement.classList.add(hasToken ? 'is-authed' : 'is-anon');
+        } catch (_) {
+          document.documentElement.classList.add('is-anon');
+        }
+      })();
+    </script>
   </head>
-  <body class="font-sans antialiased">
-    <header class="sticky top-0 z-30 glass border-b border-white/[0.06]">
-      <div class="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between gap-4">
-        <a href="/" class="flex items-center gap-2.5 text-white font-semibold tracking-tight">
-          <span class="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-zinc-900 border border-white/[0.08]">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" class="text-brand-400"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
-          </span>
-          BookTwoLang
-        </a>
-        <nav id="nav-actions" class="flex items-center gap-2 text-sm"></nav>
-      </div>
+
+  <body class="font-sans antialiased text-parchment-light bg-obsidian min-h-screen overflow-x-hidden">
+
+    <!-- ───────────── Atmospheric backdrop (always on) ───────────── -->
+    <div class="atmosphere" aria-hidden="true">
+      <div class="grain"></div>
+      <div class="vignette"></div>
+      <div class="aurora aurora--gold"></div>
+      <div class="aurora aurora--cyan"></div>
+    </div>
+
+    <!-- ───────────── Top nav ───────────── -->
+    <header id="topbar" class="topbar glass">
+      <a href="#" id="brand-link" class="brand">
+        <span class="brand__mark">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+            <path d="M5 4h10a3 3 0 0 1 3 3v13a1 1 0 0 1-1 1H8a3 3 0 0 1-3-3z"/>
+            <path d="M5 4v14a3 3 0 0 1 3-3h10"/>
+            <path d="M9 8h5M9 12h4"/>
+          </svg>
+        </span>
+        <span class="brand__name">
+          <em class="brand__serif">B<span class="brand__amp">&middot;</span>L</em>
+          <span class="brand__sub">BookTwoLang Studio</span>
+        </span>
+      </a>
+      <nav id="nav-actions" class="nav-actions"></nav>
     </header>
 
-    <!-- ===================== AUTH ===================== -->
-    <section id="view-auth" class="min-h-[calc(100vh-3.5rem)] grid place-items-center px-6 py-12">
-      <div class="w-full max-w-sm animate-fade-in">
-        <div class="text-center mb-8">
-          <h1 class="text-3xl font-semibold tracking-tight text-white">Translate any document.</h1>
-          <p class="mt-2 text-zinc-400 text-sm">30+ languages. Books welcome.</p>
+    <!-- ============================================================
+         VIEW · AUTH (default visible — JS hides for authed users)
+         ============================================================ -->
+    <section id="view-auth" class="view view--auth">
+      <div class="auth-stage">
+        <div class="auth-glyphs" aria-hidden="true">
+          <span class="auth-glyph" style="top:14%;left:8%;animation-delay:0s">كتاب</span>
+          <span class="auth-glyph" style="top:22%;right:10%;animation-delay:1.6s">本</span>
+          <span class="auth-glyph" style="bottom:18%;left:14%;animation-delay:3.2s">книга</span>
+          <span class="auth-glyph" style="bottom:24%;right:8%;animation-delay:4.8s">पुस्तक</span>
+          <span class="auth-glyph" style="top:48%;left:46%;animation-delay:6.4s;font-size:6rem;opacity:0.05">livre</span>
         </div>
 
-        <div class="bg-white/[0.02] border border-white/[0.08] rounded-2xl p-6">
-          <div class="flex items-center gap-1 mb-5 text-sm bg-black/30 border border-white/[0.06] rounded-lg p-1">
-            <button id="tab-login" type="button" class="flex-1 px-3 py-1.5 rounded-md text-white bg-white/[0.06]">Log in</button>
-            <button id="tab-signup" type="button" class="flex-1 px-3 py-1.5 rounded-md text-zinc-400 hover:text-white transition-colors">Sign up</button>
+        <div class="auth-card animate-rise">
+          <div class="auth-card__head">
+            <p class="eyebrow">Modern Literary Studio</p>
+            <h1 class="display display--lg">
+              <span class="display__line">Welcome to the</span>
+              <span class="display__line"><em class="text-papyrus">studio</em>.</span>
+            </h1>
+            <p class="lede">A workspace where books, PDFs, and technical manuscripts cross every border.</p>
           </div>
 
-          <form id="form-login" class="space-y-3" onsubmit="event.preventDefault(); window.handleLogin();">
-            <input name="email" type="email" required autocomplete="email" placeholder="Email"
-              class="w-full px-3.5 py-2.5 rounded-xl bg-black/40 border border-white/[0.08] text-white placeholder:text-zinc-500 outline-none focus:border-brand-400 transition-colors" />
-            <input name="password" type="password" required autocomplete="current-password" placeholder="Password"
-              class="w-full px-3.5 py-2.5 rounded-xl bg-black/40 border border-white/[0.08] text-white placeholder:text-zinc-500 outline-none focus:border-brand-400 transition-colors" />
-            <button type="submit" class="w-full mt-1 px-4 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-400 text-zinc-950 font-semibold transition-colors">Log in</button>
-            <p id="login-error" class="text-sm text-red-400 text-center" hidden></p>
-          </form>
+          <div class="auth-card__panel">
+            <div class="auth-tabs" role="tablist">
+              <button id="tab-login"  type="button" class="auth-tab is-active" role="tab" aria-selected="true">Sign in</button>
+              <button id="tab-signup" type="button" class="auth-tab" role="tab" aria-selected="false">Create account</button>
+              <span class="auth-tabs__rail" aria-hidden="true"><span id="auth-tabs-thumb" class="auth-tabs__thumb"></span></span>
+            </div>
 
-          <form id="form-signup" class="space-y-3" hidden onsubmit="event.preventDefault(); window.handleSignup();">
-            <input name="displayName" type="text" maxlength="80" placeholder="Display name (optional)"
-              class="w-full px-3.5 py-2.5 rounded-xl bg-black/40 border border-white/[0.08] text-white placeholder:text-zinc-500 outline-none focus:border-brand-400 transition-colors" />
-            <input name="email" type="email" required autocomplete="email" placeholder="Email"
-              class="w-full px-3.5 py-2.5 rounded-xl bg-black/40 border border-white/[0.08] text-white placeholder:text-zinc-500 outline-none focus:border-brand-400 transition-colors" />
-            <input name="password" type="password" required minlength="8" autocomplete="new-password" placeholder="Password (min 8 chars)"
-              class="w-full px-3.5 py-2.5 rounded-xl bg-black/40 border border-white/[0.08] text-white placeholder:text-zinc-500 outline-none focus:border-brand-400 transition-colors" />
-            <button type="submit" class="w-full mt-1 px-4 py-2.5 rounded-xl bg-brand-500 hover:bg-brand-400 text-zinc-950 font-semibold transition-colors">Create account</button>
-            <p id="signup-error" class="text-sm text-red-400 text-center" hidden></p>
-          </form>
+            <form id="form-login" class="auth-form" onsubmit="event.preventDefault(); window.handleLogin();">
+              <label class="field">
+                <span class="field__label">Email</span>
+                <input name="email" type="email" required autocomplete="email" placeholder="ada@booktwolang.com" />
+              </label>
+              <label class="field">
+                <span class="field__label">Password</span>
+                <input name="password" type="password" required autocomplete="current-password" placeholder="••••••••" />
+              </label>
+              <button type="submit" class="btn btn--gold btn--block">
+                <span>Enter studio</span>
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+              </button>
+              <p id="login-error" class="form-error" hidden></p>
+            </form>
+
+            <form id="form-signup" class="auth-form" hidden onsubmit="event.preventDefault(); window.handleSignup();">
+              <label class="field">
+                <span class="field__label">Display name <span class="field__hint">optional</span></span>
+                <input name="displayName" type="text" maxlength="80" placeholder="Ada Lovelace" />
+              </label>
+              <label class="field">
+                <span class="field__label">Email</span>
+                <input name="email" type="email" required autocomplete="email" placeholder="ada@booktwolang.com" />
+              </label>
+              <label class="field">
+                <span class="field__label">Password <span class="field__hint">min 8 chars</span></span>
+                <input name="password" type="password" required minlength="8" autocomplete="new-password" placeholder="••••••••" />
+              </label>
+              <button type="submit" class="btn btn--gold btn--block">
+                <span>Open my studio</span>
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+              </button>
+              <p id="signup-error" class="form-error" hidden></p>
+            </form>
+          </div>
+
+          <p class="auth-card__foot">
+            <span class="dot dot--biolume"></span>
+            <span>Powered by Gemini · Files stay in your account.</span>
+          </p>
         </div>
-
-        <p class="mt-4 text-center text-xs text-zinc-500">Powered by Gemini. Files stay in your account.</p>
       </div>
     </section>
 
-    <!-- ===================== APP ===================== -->
-    <section id="view-app" hidden>
-      <div class="max-w-5xl mx-auto px-6 pt-12 pb-24">
-        <!-- HERO -->
-        <div class="animate-fade-in">
-          <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-6">
-            <h1 class="text-3xl md:text-4xl font-semibold tracking-tight text-white">Translate to</h1>
-            <div class="relative">
-              <select id="global-target-lang" class="lang-picker text-base md:text-lg font-semibold"></select>
-            </div>
-          </div>
+    <!-- ============================================================
+         VIEW · HERO DASHBOARD
+         ============================================================ -->
+    <section id="view-hero" class="view view--hero" hidden>
+      <div class="hero-stage">
 
-          <!-- DROPZONE -->
-          <div id="dropzone" class="dropzone relative rounded-2xl border-2 border-dashed border-white/[0.12] bg-white/[0.015] p-10 md:p-12 text-center cursor-pointer group">
-            <input id="file-input" type="file" accept=".txt,.docx" multiple class="absolute inset-0 opacity-0 cursor-pointer" />
-            <div class="pointer-events-none">
-              <div class="mx-auto mb-4 w-12 h-12 rounded-2xl bg-white/[0.04] border border-white/[0.08] grid place-items-center group-hover:border-brand-400/40 transition-colors">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="text-brand-400">
-                  <path d="M12 3v14"/><path d="M5 10l7-7 7 7"/><path d="M5 21h14"/>
+        <!-- Floating script cards behind the dropzone -->
+        <div class="script-cards" aria-hidden="true">
+          <div class="script-card script-card--1">
+            <span class="script-glyph script-glyph--ar morph-1">العالم</span>
+            <span class="script-glyph script-glyph--jp morph-2">世界</span>
+            <span class="script-glyph script-glyph--cy morph-3">мир</span>
+            <span class="script-glyph script-glyph--lt morph-4">mundo</span>
+          </div>
+          <div class="script-card script-card--2">
+            <span class="script-glyph script-glyph--hi morph-1">कहानी</span>
+            <span class="script-glyph script-glyph--jp morph-2">物語</span>
+            <span class="script-glyph script-glyph--ar morph-3">قصة</span>
+            <span class="script-glyph script-glyph--lt morph-4">conte</span>
+          </div>
+          <div class="script-card script-card--3">
+            <span class="script-glyph script-glyph--cy morph-1">слово</span>
+            <span class="script-glyph script-glyph--ar morph-2">كلمة</span>
+            <span class="script-glyph script-glyph--jp morph-3">言葉</span>
+            <span class="script-glyph script-glyph--lt morph-4">verba</span>
+          </div>
+        </div>
+
+        <header class="hero-head animate-rise">
+          <p class="eyebrow">A workspace for translating long-form work</p>
+          <h1 class="display display--xl">
+            <span class="display__line">Drop a <em class="text-papyrus">manuscript</em>.</span>
+            <span class="display__line">Uncover a <em class="text-papyrus italic">new world</em>.</span>
+          </h1>
+          <p class="lede">
+            Books · PDFs · Technical docs. We translate end-to-end while preserving headings, tables, margins, and tone — across more than thirty languages.
+          </p>
+        </header>
+
+        <!-- Equalizer language picker -->
+        <div class="equalizer animate-rise" style="animation-delay:80ms" aria-label="Choose target language">
+          <div class="equalizer__head">
+            <span class="equalizer__pre">Translate into</span>
+            <strong id="equalizer-current" class="equalizer__current">…</strong>
+          </div>
+          <div class="equalizer__rail">
+            <button id="eq-scroll-left"  type="button" class="equalizer__chev" aria-label="Scroll left">
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M15 6l-6 6 6 6"/></svg>
+            </button>
+            <div id="equalizer-bars" class="equalizer__bars" role="listbox" aria-label="Languages"></div>
+            <button id="eq-scroll-right" type="button" class="equalizer__chev" aria-label="Scroll right">
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Cinematic dropzone -->
+        <div id="dropzone" class="dropzone animate-rise" style="animation-delay:160ms">
+          <input id="file-input" type="file" accept=".txt,.docx,.pdf,.md" multiple class="dropzone__input" />
+          <div class="dropzone__frame">
+            <div class="dropzone__corner dropzone__corner--tl"></div>
+            <div class="dropzone__corner dropzone__corner--tr"></div>
+            <div class="dropzone__corner dropzone__corner--bl"></div>
+            <div class="dropzone__corner dropzone__corner--br"></div>
+
+            <div class="dropzone__inner">
+              <div class="dropzone__icon">
+                <svg viewBox="0 0 32 32" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M8 6 h12 l6 6 v14 a2 2 0 0 1 -2 2 H8 a2 2 0 0 1 -2 -2 V8 a2 2 0 0 1 2 -2 z"/>
+                  <path d="M20 6 v6 h6"/>
+                  <path d="M11 18 h10 M11 22 h7"/>
                 </svg>
               </div>
-              <p class="text-white font-medium">Drop a document to translate</p>
-              <p class="mt-1 text-sm text-zinc-400">or click to choose — <span class="font-mono text-xs">.txt</span> or <span class="font-mono text-xs">.docx</span>, up to 5&nbsp;MB</p>
-            </div>
-          </div>
-
-          <!-- PASTE TOGGLE -->
-          <div class="mt-3 flex items-center justify-center gap-3 text-xs text-zinc-500">
-            <span class="h-px flex-1 bg-white/[0.06]"></span>
-            <button id="toggle-paste" type="button" class="hover:text-zinc-300 transition-colors">or paste text instead</button>
-            <span class="h-px flex-1 bg-white/[0.06]"></span>
-          </div>
-
-          <div id="paste-panel" hidden class="mt-4 bg-white/[0.02] border border-white/[0.08] rounded-2xl p-4 animate-slide-up">
-            <textarea id="paste-text" rows="6" placeholder="Paste any text — a paragraph, a chapter, a chat log…"
-              class="w-full px-3 py-2 rounded-xl bg-black/40 border border-white/[0.08] text-white placeholder:text-zinc-500 outline-none focus:border-brand-400 transition-colors scrollbar text-sm leading-relaxed"></textarea>
-            <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
-              <div class="flex items-center gap-2 text-xs text-zinc-400">
-                <span>Source</span>
-                <select id="paste-source-lang" class="px-2 py-1 rounded-lg bg-black/40 border border-white/[0.08] text-white text-xs">
-                  <option value="auto">Auto-detect</option>
-                </select>
+              <h2 class="dropzone__title">
+                Drop a manuscript.
+              </h2>
+              <p class="dropzone__sub">Uncover a new world.</p>
+              <div class="dropzone__meta">
+                <span class="chip">PDF</span>
+                <span class="chip">DOCX</span>
+                <span class="chip">TXT</span>
+                <span class="chip">MD</span>
+                <span class="chip chip--mono">≤ 5MB</span>
               </div>
-              <button id="paste-translate" type="button" class="px-4 py-2 rounded-xl bg-brand-500 hover:bg-brand-400 text-zinc-950 text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed">Translate</button>
+              <p class="dropzone__hint"><span class="kbd">⌘V</span> to paste · <span class="kbd">drag</span> a file · <span class="kbd">click</span> to browse</p>
+            </div>
+
+            <!-- Laser scan overlay -->
+            <div id="dropzone-scan" class="dropzone__scan" aria-hidden="true">
+              <div class="dropzone__laser"></div>
+              <div class="dropzone__scan-grid"></div>
+              <p class="dropzone__scan-status">Scanning manuscript<span class="dot-trail"></span></p>
             </div>
           </div>
         </div>
 
-        <!-- HISTORY -->
-        <div class="mt-14">
-          <div class="flex items-end justify-between mb-4">
-            <h2 class="text-sm uppercase tracking-[0.12em] text-zinc-500 font-medium">Your translations</h2>
-            <span id="history-count" class="text-xs text-zinc-500 font-mono"></span>
-          </div>
+        <div class="hero-actions">
+          <button id="toggle-paste" type="button" class="ghost-btn">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 4h6a2 2 0 0 1 2 2v2H7V6a2 2 0 0 1 2-2zM7 8h10v12a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2z"/></svg>
+            <span>Paste text instead</span>
+          </button>
+          <span class="dot-sep">·</span>
+          <button id="open-help" type="button" class="ghost-btn">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 4 2c-1 0.7-1.5 1-1.5 2"/><path d="M12 17.01l.01 0"/></svg>
+            <span>How it works</span>
+          </button>
+        </div>
 
-          <div id="doc-cards" class="grid grid-cols-1 gap-3"></div>
-
-          <div id="empty-state" class="text-center py-16 text-zinc-500 text-sm" hidden>
-            Nothing yet. Drop a file above to begin.
+        <div id="paste-panel" class="paste-panel" hidden>
+          <textarea id="paste-text" rows="7" placeholder="Paste any text — a paragraph, a chapter, a chat log, a research abstract…"></textarea>
+          <div class="paste-panel__bar">
+            <div class="paste-panel__lang">
+              <span class="micro-label">Source</span>
+              <select id="paste-source-lang" class="select-pill">
+                <option value="auto">Auto-detect</option>
+              </select>
+            </div>
+            <div class="paste-panel__count">
+              <span id="paste-count" class="font-mono text-xs text-parchment-dim">0 chars</span>
+            </div>
+            <button id="paste-translate" type="button" class="btn btn--gold">
+              <span>Translate</span>
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </button>
           </div>
         </div>
+
+        <!-- Library / history -->
+        <section class="library">
+          <header class="library__head">
+            <div>
+              <p class="eyebrow">Your library</p>
+              <h3 class="section-title">Recent manuscripts</h3>
+            </div>
+            <div class="library__meta">
+              <span id="history-count" class="font-mono text-xs text-parchment-dim"></span>
+              <div class="seg" role="tablist" aria-label="Filter">
+                <button class="seg__btn is-active" data-filter="all" type="button">All</button>
+                <button class="seg__btn" data-filter="translating" type="button">Active</button>
+                <button class="seg__btn" data-filter="complete" type="button">Done</button>
+              </div>
+            </div>
+          </header>
+
+          <div id="doc-cards" class="library__grid"></div>
+
+          <div id="empty-state" class="library__empty" hidden>
+            <div class="library__empty-mark">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+            </div>
+            <p>Your shelf is empty. Drop a file above to begin your first translation.</p>
+          </div>
+        </section>
+
+        <footer class="hero-foot">
+          <span class="dot dot--biolume"></span>
+          <span>Backend: Gemini · 33 target languages · Chunked on paragraph boundaries · Resumable</span>
+        </footer>
       </div>
     </section>
 
-    <!-- Toast container -->
-    <div id="toasts" class="fixed bottom-6 right-6 z-50 space-y-2 pointer-events-none"></div>
+    <!-- ============================================================
+         VIEW · STUDIO WORKSPACE
+         ============================================================ -->
+    <section id="view-studio" class="view view--studio" hidden>
 
-    <script src="/public/assets/js/app.js"></script>
+      <!-- Studio toolbar -->
+      <div class="studio-bar glass">
+        <button id="studio-back" type="button" class="iconbtn" title="Back to library">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M19 12H5M11 18l-6-6 6-6"/></svg>
+        </button>
+        <div class="studio-bar__title">
+          <h2 id="studio-title" class="studio-bar__name">Untitled</h2>
+          <div class="studio-bar__meta">
+            <span id="studio-langpair" class="lang-pair">
+              <span id="studio-src-lang" class="lang-pill">auto</span>
+              <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+              <span id="studio-tgt-lang" class="lang-pill lang-pill--gold">…</span>
+            </span>
+            <span id="studio-status" class="studio-status"></span>
+          </div>
+        </div>
+        <div class="studio-bar__actions">
+          <button id="studio-find" type="button" class="iconbtn" title="Find in document">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          </button>
+          <button id="studio-download" type="button" class="iconbtn iconbtn--label" title="Download translation">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 4v12M6 12l6 6 6-6M4 20h16"/></svg>
+            <span>Download</span>
+          </button>
+          <button id="studio-delete" type="button" class="iconbtn iconbtn--danger" title="Delete document">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Split-screen reader -->
+      <div id="studio-split" class="studio-split">
+        <!-- Left: Original -->
+        <article class="pane pane--src" data-pane="src">
+          <header class="pane__head">
+            <span class="pane__label">Original</span>
+            <div class="pane__tools">
+              <span id="pane-src-lang" class="lang-pill lang-pill--ghost">auto</span>
+              <button class="pane__tool" type="button" data-action="copy-src" title="Copy source">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+              </button>
+            </div>
+          </header>
+          <div id="pane-src-scroll" class="pane__scroll scrollbar">
+            <div id="pane-src-body" class="pane__body manuscript"></div>
+          </div>
+        </article>
+
+        <!-- Draggable glowing divider -->
+        <div id="split-divider" class="split-divider" role="separator" aria-orientation="vertical" aria-label="Resize panes" tabindex="0">
+          <div class="split-divider__track"></div>
+          <div class="split-divider__handle">
+            <span class="split-divider__dot"></span>
+            <span class="split-divider__dot"></span>
+            <span class="split-divider__dot"></span>
+          </div>
+        </div>
+
+        <!-- Right: Translation -->
+        <article class="pane pane--tgt" data-pane="tgt">
+          <header class="pane__head">
+            <span class="pane__label">Translation</span>
+            <div class="pane__tools">
+              <span id="pane-tgt-lang" class="lang-pill lang-pill--gold">…</span>
+              <button class="pane__tool" type="button" data-action="copy-tgt" title="Copy translation">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+              </button>
+            </div>
+          </header>
+          <div id="pane-tgt-scroll" class="pane__scroll scrollbar">
+            <div id="pane-tgt-body" class="pane__body manuscript"></div>
+          </div>
+        </article>
+
+        <!-- Right rail: studio controls -->
+        <aside id="studio-rail" class="studio-rail glass">
+          <!-- Progress ring -->
+          <div class="rail-card">
+            <div id="progress-ring" class="progress-ring" role="img" aria-label="Translation progress">
+              <svg viewBox="0 0 120 120" class="progress-ring__svg">
+                <defs>
+                  <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%"  stop-color="#F5D789"/>
+                    <stop offset="100%" stop-color="#B89240"/>
+                  </linearGradient>
+                </defs>
+                <circle class="progress-ring__bg" cx="60" cy="60" r="52"/>
+                <circle id="progress-ring-fg" class="progress-ring__fg" cx="60" cy="60" r="52" stroke="url(#ringGrad)"/>
+              </svg>
+              <div class="progress-ring__center">
+                <strong id="progress-ring-pct" class="progress-ring__pct">0<span>%</span></strong>
+                <span id="progress-ring-sub" class="progress-ring__sub">queued</span>
+              </div>
+            </div>
+            <div class="rail-meta">
+              <div><span class="micro-label">Read time</span><strong id="rail-read-time" class="rail-value">—</strong></div>
+              <div><span class="micro-label">Words</span><strong id="rail-word-count" class="rail-value">—</strong></div>
+            </div>
+          </div>
+
+          <!-- Tone tuner dial -->
+          <div class="rail-card">
+            <div class="rail-head">
+              <span class="micro-label">Tone tuner</span>
+              <span id="tone-readout" class="rail-value rail-value--sm">Literary</span>
+            </div>
+            <div class="dial" id="tone-dial" role="slider" aria-valuemin="0" aria-valuemax="2" aria-valuenow="1" tabindex="0" aria-label="Translation tone">
+              <div class="dial__face">
+                <div class="dial__ticks">
+                  <span class="dial__tick" style="--a:-60deg"></span>
+                  <span class="dial__tick" style="--a:-30deg"></span>
+                  <span class="dial__tick" style="--a:0deg"></span>
+                  <span class="dial__tick" style="--a:30deg"></span>
+                  <span class="dial__tick" style="--a:60deg"></span>
+                </div>
+                <div id="dial-needle" class="dial__needle"></div>
+                <div class="dial__cap"></div>
+              </div>
+              <ul class="dial__labels">
+                <li data-tone="0">Literal</li>
+                <li data-tone="1" class="is-active">Literary</li>
+                <li data-tone="2">Academic</li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- Formatting lock -->
+          <div class="rail-card">
+            <button id="format-lock" type="button" class="lock" aria-pressed="true">
+              <span class="lock__icon">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+              </span>
+              <span class="lock__body">
+                <strong>Formatting lock</strong>
+                <span>Headings, lists, and margins are kept intact.</span>
+              </span>
+              <span class="lock__switch"><span class="lock__knob"></span></span>
+            </button>
+          </div>
+
+          <!-- Character memory toggle -->
+          <button id="memory-toggle" type="button" class="rail-card rail-card--btn">
+            <span class="memory-toggle__icon">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c1-3.6 4-5 7-5s6 1.4 7 5"/></svg>
+            </span>
+            <span class="memory-toggle__body">
+              <strong>Character memory</strong>
+              <span id="memory-count" class="memory-toggle__sub">— extracted</span>
+            </span>
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg>
+          </button>
+        </aside>
+      </div>
+
+      <!-- Character memory drawer (slides in from right) -->
+      <aside id="memory-drawer" class="memory-drawer" hidden aria-hidden="true">
+        <header class="memory-drawer__head">
+          <div>
+            <p class="eyebrow">Character &amp; lore memory</p>
+            <h3 class="memory-drawer__title">Cast list</h3>
+          </div>
+          <button id="memory-close" type="button" class="iconbtn">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </header>
+        <div class="memory-drawer__intro">
+          <p>Auto-extracted proper nouns from your manuscript. Lock a translation to keep it consistent across every chapter.</p>
+        </div>
+        <div class="memory-drawer__filters">
+          <button class="seg__btn is-active" data-mem-filter="all"  type="button">All</button>
+          <button class="seg__btn" data-mem-filter="people"   type="button">People</button>
+          <button class="seg__btn" data-mem-filter="places"   type="button">Places</button>
+          <button class="seg__btn" data-mem-filter="terms"    type="button">Terms</button>
+        </div>
+        <div id="memory-list" class="memory-drawer__list scrollbar"></div>
+      </aside>
+    </section>
+
+    <!-- ───────────── Toasts ───────────── -->
+    <div id="toasts" class="toasts" aria-live="polite"></div>
+
+    <!-- ───────────── Help overlay ───────────── -->
+    <div id="help-overlay" class="overlay" hidden>
+      <div class="overlay__backdrop" data-close></div>
+      <div class="overlay__panel glass animate-rise">
+        <header class="overlay__head">
+          <p class="eyebrow">How the studio works</p>
+          <h3 class="display display--md">Three steps from <em class="text-papyrus">manuscript</em> to <em class="text-papyrus">new world</em>.</h3>
+          <button class="iconbtn" data-close>
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </header>
+        <ol class="overlay__steps">
+          <li>
+            <span class="overlay__num">01</span>
+            <div>
+              <h4>Drop &amp; scan</h4>
+              <p>Drop a PDF, DOCX, or TXT. We extract clean text on your device, then chunk it on paragraph boundaries so the AI never cuts a sentence in half.</p>
+            </div>
+          </li>
+          <li>
+            <span class="overlay__num">02</span>
+            <div>
+              <h4>Tune &amp; lock</h4>
+              <p>Pick a tone — literal, literary, or academic. Lock proper nouns to keep characters and locations consistent across every chapter.</p>
+            </div>
+          </li>
+          <li>
+            <span class="overlay__num">03</span>
+            <div>
+              <h4>Read in parallel</h4>
+              <p>Open the studio and watch your translation cascade in. Sync-scroll the panes to compare every paragraph, side by side.</p>
+            </div>
+          </li>
+        </ol>
+        <footer class="overlay__foot">
+          <button class="btn btn--ghost" data-close>Got it</button>
+        </footer>
+      </div>
+    </div>
+
+    <script type="module" src="/public/assets/js/app.js"></script>
   </body>
 </html>

@@ -112,9 +112,31 @@
         </span>
         <span class="brand__name">
           <em class="brand__serif">B<span class="brand__amp">&middot;</span>L</em>
-          <span class="brand__sub">BookTwoLang Studio</span>
+          <span class="brand__sub">Modern Literary Studio</span>
         </span>
       </a>
+
+      <!-- Workspace switcher -->
+      <nav id="workspace-switcher" class="ws-switcher" role="tablist" aria-label="Workspace">
+        <button class="ws-pill" data-ws="library" type="button" role="tab" title="Library — your translations">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h4v16H4zM10 4h4v16h-4zM17 5l3.5 14.5"/></svg>
+          <span>Library</span>
+        </button>
+        <button class="ws-pill" data-ws="nexus" type="button" role="tab" title="Nexus — visual canvas">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="18" r="2.5"/><circle cx="12" cy="12" r="2.5"/><path d="M7.8 7.8L10 10M16.2 7.8L14 10M7.8 16.2L10 14M16.2 16.2L14 14"/></svg>
+          <span>Nexus</span>
+        </button>
+        <button class="ws-pill" data-ws="vault" type="button" role="tab" title="Vault — private journal">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h13l3 3v13H4z"/><path d="M9 4v6h6V4"/><path d="M8 16h8"/></svg>
+          <span>Vault</span>
+        </button>
+        <button class="ws-pill" data-ws="broadcast" type="button" role="tab" title="Broadcast — multi-lingual publishing">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8v12"/><circle cx="12" cy="6" r="2.5"/><path d="M5 11l7-3 7 3"/><path d="M8 14l4-2 4 2"/></svg>
+          <span>Broadcast</span>
+        </button>
+        <span id="ws-switcher-thumb" class="ws-switcher__thumb" aria-hidden="true"></span>
+      </nav>
+
       <nav id="nav-actions" class="nav-actions"></nav>
     </header>
 
@@ -194,9 +216,9 @@
     </section>
 
     <!-- ============================================================
-         VIEW · HERO DASHBOARD
+         VIEW · LIBRARY (translation history + drop zone)
          ============================================================ -->
-    <section id="view-hero" class="view view--hero" hidden>
+    <section id="view-library" class="view view--hero" hidden>
       <div class="hero-stage">
 
         <!-- Floating script cards behind the dropzone -->
@@ -357,6 +379,286 @@
         </footer>
       </div>
     </section>
+
+
+    <!-- ============================================================
+         VIEW · NEXUS (visual canvas)
+         ============================================================ -->
+    <section id="view-nexus" class="view view--nexus" hidden>
+      <!-- Boards list (visible when no canvas is open) -->
+      <div id="nexus-list" class="nexus-list">
+        <div class="nexus-list__inner">
+          <header class="nexus-list__head">
+            <div>
+              <p class="eyebrow">Nexus Canvas</p>
+              <h1 class="display display--lg">Think in <em class="text-papyrus italic">space</em>, not in lines.</h1>
+              <p class="lede">Scatter scenes, characters, and references across an infinite canvas. Connect them. Let the studio compile your sprawl into a cohesive draft.</p>
+            </div>
+            <button id="nexus-new" type="button" class="btn btn--gold">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+              <span>New canvas</span>
+            </button>
+          </header>
+          <div id="nexus-grid" class="nexus-grid"></div>
+          <div id="nexus-empty" class="library__empty" hidden>
+            <div class="library__empty-mark">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="18" r="2"/><path d="M8 8l8 8"/></svg>
+            </div>
+            <p>No canvases yet. Click <em>New canvas</em> to scatter your first idea.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Canvas editor (visible when a canvas is open) -->
+      <div id="nexus-editor" class="nexus-editor" hidden>
+        <header class="nexus-bar glass">
+          <button id="nexus-back" type="button" class="iconbtn" title="Back to canvases">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M19 12H5M11 18l-6-6 6-6"/></svg>
+          </button>
+          <input id="nexus-title" class="nexus-bar__title" type="text" placeholder="Untitled canvas" maxlength="200" />
+          <div class="nexus-bar__meta">
+            <span id="nexus-node-count" class="font-mono text-xs text-parchment-dim">0 nodes</span>
+            <span class="dot-sep">·</span>
+            <span id="nexus-edge-count" class="font-mono text-xs text-parchment-dim">0 edges</span>
+          </div>
+          <div class="nexus-bar__actions">
+            <div class="nexus-zoom" role="group" aria-label="Zoom">
+              <button id="nexus-zoom-out" class="iconbtn" type="button" title="Zoom out">−</button>
+              <button id="nexus-zoom-reset" class="iconbtn iconbtn--label" type="button" title="Reset zoom"><span id="nexus-zoom-pct">100%</span></button>
+              <button id="nexus-zoom-in" class="iconbtn" type="button" title="Zoom in">+</button>
+            </div>
+            <button id="nexus-add-node" class="iconbtn iconbtn--label" type="button">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+              Node
+            </button>
+            <button id="nexus-compile" class="btn btn--gold btn--sm" type="button">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5l14 7-14 7z"/></svg>
+              <span>Agentic compile</span>
+            </button>
+          </div>
+        </header>
+
+        <div class="nexus-stage">
+          <div id="nexus-canvas" class="nexus-canvas">
+            <div id="nexus-canvas-grid" class="nexus-canvas__grid" aria-hidden="true"></div>
+            <div id="nexus-world" class="nexus-world">
+              <svg id="nexus-edges" class="nexus-edges" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                  <marker id="nexus-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                    <path d="M0 0 L10 5 L0 10 z" fill="rgba(232,192,99,0.7)" />
+                  </marker>
+                </defs>
+              </svg>
+              <div id="nexus-nodes" class="nexus-nodes"></div>
+              <svg id="nexus-pending-edge" class="nexus-pending-edge" xmlns="http://www.w3.org/2000/svg" hidden></svg>
+            </div>
+          </div>
+
+          <!-- Side panel: outline + draft -->
+          <aside id="nexus-panel" class="nexus-panel glass" aria-label="Compiled outline">
+            <header class="nexus-panel__head">
+              <p class="eyebrow">Compiled outline</p>
+              <h3 class="nexus-panel__title">Agentic draft</h3>
+            </header>
+            <div id="nexus-panel-body" class="nexus-panel__body scrollbar">
+              <div class="nexus-panel__placeholder">
+                <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5l14 7-14 7z"/></svg>
+                <p>Drop nodes, connect them, then press <strong>Agentic compile</strong> to fuse your sprawl into a structured outline and first draft.</p>
+              </div>
+            </div>
+            <footer id="nexus-panel-foot" class="nexus-panel__foot" hidden>
+              <button id="nexus-send-studio" type="button" class="btn btn--ghost btn--sm">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+                <span>Send draft to Studio</span>
+              </button>
+              <button id="nexus-send-broadcast" type="button" class="btn btn--gold btn--sm">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 8v12"/><circle cx="12" cy="6" r="2.5"/><path d="M5 11l7-3 7 3"/></svg>
+                <span>Send to Broadcast</span>
+              </button>
+            </footer>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+
+    <!-- ============================================================
+         VIEW · VAULT (distraction-free journal)
+         ============================================================ -->
+    <section id="view-vault" class="view view--vault" hidden>
+      <!-- Vertical timeline scrubber -->
+      <aside id="vault-timeline" class="vault-timeline">
+        <header class="vault-timeline__head">
+          <p class="eyebrow">Vault</p>
+          <h3 class="vault-timeline__title">Memory</h3>
+          <button id="vault-new" type="button" class="iconbtn iconbtn--label">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            <span>New</span>
+          </button>
+        </header>
+        <div id="vault-timeline-list" class="vault-timeline__list scrollbar"></div>
+      </aside>
+
+      <!-- Surface (memory) card — appears top-right -->
+      <div id="vault-surface" class="vault-surface" hidden>
+        <div class="vault-surface__head">
+          <span class="dot dot--biolume"></span>
+          <span id="vault-surface-reason" class="vault-surface__reason"></span>
+          <button id="vault-surface-close" type="button" class="iconbtn">
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <h4 id="vault-surface-title" class="vault-surface__title"></h4>
+        <p id="vault-surface-preview" class="vault-surface__preview"></p>
+        <button id="vault-surface-open" type="button" class="ghost-btn">Open this memory →</button>
+      </div>
+
+      <!-- Editor -->
+      <div class="vault-stage">
+        <div class="vault-meta">
+          <input id="vault-title" type="text" placeholder="(untitled)" maxlength="120" />
+          <div class="vault-meta__chips">
+            <span id="vault-mood" class="vault-chip" hidden></span>
+            <div id="vault-tags" class="vault-tags"></div>
+            <span id="vault-save" class="vault-save"></span>
+          </div>
+        </div>
+        <textarea id="vault-body" spellcheck="true" placeholder="Begin writing. The vault listens, indexes, and forgets nothing."></textarea>
+        <div class="vault-foot">
+          <span class="vault-foot__brand">— Vault, BookTwoLang</span>
+          <span id="vault-words" class="vault-foot__words">0 words</span>
+        </div>
+      </div>
+    </section>
+
+
+    <!-- ============================================================
+         VIEW · BROADCAST (multi-lingual publishing)
+         ============================================================ -->
+    <section id="view-broadcast" class="view view--broadcast" hidden>
+      <!-- Articles list -->
+      <div id="broadcast-list" class="broadcast-list">
+        <div class="broadcast-list__inner">
+          <header class="broadcast-list__head">
+            <div>
+              <p class="eyebrow">Broadcast Desk</p>
+              <h1 class="display display--lg">Born <em class="text-papyrus italic">global</em>.</h1>
+              <p class="lede">Write once. Publish in twelve languages. Watch readers light up the map.</p>
+            </div>
+            <button id="broadcast-new" type="button" class="btn btn--gold">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+              <span>New article</span>
+            </button>
+          </header>
+          <div id="broadcast-grid" class="broadcast-grid"></div>
+          <div id="broadcast-empty" class="library__empty" hidden>
+            <div class="library__empty-mark">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 8v12"/><circle cx="12" cy="6" r="2.5"/><path d="M5 11l7-3 7 3"/></svg>
+            </div>
+            <p>No articles yet. Click <em>New article</em> to start drafting.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Composer -->
+      <div id="broadcast-composer" class="broadcast-composer" hidden>
+        <header class="broadcast-bar glass">
+          <button id="broadcast-back" type="button" class="iconbtn" title="Back">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M19 12H5M11 18l-6-6 6-6"/></svg>
+          </button>
+          <div class="broadcast-bar__title">
+            <span id="broadcast-status" class="broadcast-status broadcast-status--draft">Draft</span>
+            <span id="broadcast-save-state" class="broadcast-save"></span>
+          </div>
+          <div class="broadcast-bar__tabs">
+            <button class="ws-pill is-active" data-tab="compose" type="button">Compose</button>
+            <button class="ws-pill" data-tab="global" type="button">Global preview</button>
+            <button class="ws-pill" data-tab="stats" type="button">Analytics</button>
+          </div>
+          <div class="broadcast-bar__actions">
+            <button id="broadcast-delete" type="button" class="iconbtn iconbtn--danger" title="Delete">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13"/></svg>
+            </button>
+            <button id="broadcast-unpublish" type="button" class="btn btn--ghost btn--sm" hidden>Unpublish</button>
+            <button id="broadcast-publish"   type="button" class="btn btn--gold  btn--sm">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg>
+              <span>Publish</span>
+            </button>
+          </div>
+        </header>
+
+        <!-- Tab: Compose -->
+        <div id="broadcast-tab-compose" class="broadcast-pane broadcast-pane--compose">
+          <div class="broadcast-editor">
+            <div class="broadcast-editor__cover">
+              <button id="broadcast-emoji" type="button" class="broadcast-emoji" title="Pick a cover glyph">✦</button>
+            </div>
+            <input id="broadcast-title"    type="text" class="broadcast-editor__title" placeholder="Article title" maxlength="200" />
+            <input id="broadcast-subtitle" type="text" class="broadcast-editor__subtitle" placeholder="Optional subtitle…" maxlength="300" />
+            <textarea id="broadcast-body" class="broadcast-editor__body" placeholder="Begin the article. Write in any language — we'll translate it for the world." spellcheck="true"></textarea>
+          </div>
+        </div>
+
+        <!-- Tab: Global preview -->
+        <div id="broadcast-tab-global" class="broadcast-pane broadcast-pane--global" hidden>
+          <aside class="broadcast-array">
+            <header class="broadcast-array__head">
+              <p class="eyebrow">Global array</p>
+              <h3 class="section-title">Where in the world?</h3>
+              <p class="lede" style="font-size:13px;margin-top:8px">Select target languages. We translate in parallel and show every render side-by-side, so a Tokyo reader and a Cairo reader see the same article — beautifully rendered, perfectly localised.</p>
+            </header>
+            <div id="broadcast-langs" class="broadcast-langs"></div>
+            <button id="broadcast-translate" type="button" class="btn btn--gold btn--block">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12l4 4L19 6"/></svg>
+              <span>Render previews</span>
+            </button>
+          </aside>
+          <div id="broadcast-previews" class="broadcast-previews scrollbar"></div>
+        </div>
+
+        <!-- Tab: Analytics -->
+        <div id="broadcast-tab-stats" class="broadcast-pane broadcast-pane--stats" hidden>
+          <div class="stats-grid">
+            <div class="stats-card stats-card--big">
+              <p class="micro-label">Total views</p>
+              <strong id="stats-total" class="stats-value">—</strong>
+              <span id="stats-trend" class="stats-trend"></span>
+            </div>
+            <div class="stats-card">
+              <p class="micro-label">Unique readers</p>
+              <strong id="stats-unique" class="stats-value">—</strong>
+            </div>
+            <div class="stats-card">
+              <p class="micro-label">Avg read</p>
+              <strong id="stats-avgread" class="stats-value">—</strong>
+            </div>
+            <div class="stats-card">
+              <p class="micro-label">Completion</p>
+              <strong id="stats-completion" class="stats-value">—</strong>
+            </div>
+          </div>
+          <div class="stats-card stats-card--chart">
+            <header class="stats-card__head">
+              <div>
+                <p class="micro-label">Views — last 14 days</p>
+                <strong class="stats-value stats-value--sm">Daily traffic</strong>
+              </div>
+            </header>
+            <div id="stats-chart" class="stats-chart"></div>
+          </div>
+          <div class="stats-card stats-card--geo">
+            <header class="stats-card__head">
+              <div>
+                <p class="micro-label">Reach</p>
+                <strong class="stats-value stats-value--sm">Geographic distribution</strong>
+              </div>
+            </header>
+            <div id="stats-geo" class="stats-geo"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
 
     <!-- ============================================================
          VIEW · STUDIO WORKSPACE

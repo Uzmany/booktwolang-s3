@@ -12,16 +12,19 @@
  *   2. API helper
  *   3. Toast system
  *   4. Auth (login / signup / logout / nav)
- *   5. View routing
- *   6. Languages + searchable picker (trigger + recent pills + popover)
- *   7. Hero dashboard (dropzone, paste, library)
+ *   5. View routing + workspace switcher
+ *   6. Languages + searchable picker
+ *   7. Library dashboard (dropzone, paste, history)
  *   8. PDF / DOCX / TXT extraction
  *   9. Document polling
  *  10. Studio workspace (split view, sync scroll, divider)
  *  11. Studio rail (progress ring, tone dial, format lock)
  *  12. Character memory (extraction, drawer, locks)
- *  13. Cascade-in animation
- *  14. Help overlay + boot
+ *  13. Help overlay
+ *  14. Nexus canvas (boards, infinite pan/zoom, nodes, edges, compile)
+ *  15. Vault journal (timeline, auto-tag, memory surface)
+ *  16. Broadcast publishing (composer, global previews, analytics)
+ *  17. Boot
  * ======================================================================= */
 
 
@@ -34,13 +37,18 @@ const API_BASE = (location.hostname === "localhost" || location.hostname === "12
 const STORAGE = {
   token:        "btl_access_token_v2",
   user:         "btl_user_v2",
+  workspace:    "btl_workspace_v1",
   targetLang:   "btl_target_lang_v2",
   recentLangs:  "btl_recent_langs_v1",
   tone:         "btl_tone_v2",
   formatLock:   "btl_format_lock_v2",
   splitRatio:   "btl_split_ratio_v2",
   memory:       "btl_memory_v2",
+  vaultDraft:   "btl_vault_draft_v1",
+  broadcastLangs: "btl_broadcast_langs_v1",
 };
+
+const WORKSPACES = ["library", "nexus", "vault", "broadcast"];
 
 /* Native-script names. Falls back to the API's English label when missing. */
 const NATIVE_NAMES = {
@@ -65,33 +73,56 @@ const TONES = [
 
 
 const state = {
-  view: "auth",                         // 'auth' | 'hero' | 'studio'
+  view: "auth",                         // 'auth' | 'library' | 'nexus' | 'vault' | 'broadcast' | 'studio'
+  workspace: localStorage.getItem(STORAGE.workspace) || "library",
   accessToken: localStorage.getItem(STORAGE.token) || null,
   user: safeParse(localStorage.getItem(STORAGE.user)),
 
-  languages: [],                        // [{code,name}]
+  languages: [],
   targetLang: localStorage.getItem(STORAGE.targetLang) || null,
 
-  documents: [],                        // metadata list
-  expandedDocId: null,                  // for hero card (none — we use studio now)
-  filter: "all",                        // 'all' | 'translating' | 'complete'
-  pollHandles: new Map(),               // docId -> setTimeout handle
+  // library
+  documents: [],
+  expandedDocId: null,
+  filter: "all",
+  pollHandles: new Map(),
 
-  // studio
+  // studio (translation reader)
   studioDocId: null,
   studioMeta: null,
   studioContent: { source: "", translated: "" },
   studioParagraphs: { src: [], tgt: [] },
   splitRatio: clamp(parseFloat(localStorage.getItem(STORAGE.splitRatio) || "0.5"), 0.2, 0.8),
-  isSyncing: false,                     // re-entrancy guard for sync scroll
-  cascadedParagraphs: new Set(),        // 'docId:idx' marks already animated
-  syncSource: null,                     // which pane currently drives scroll
+  isSyncing: false,
+  cascadedParagraphs: new Set(),
+  syncSource: null,
 
   // controls
   tone: clamp(parseInt(localStorage.getItem(STORAGE.tone) ?? "1", 10), 0, 2),
   formatLock: (localStorage.getItem(STORAGE.formatLock) ?? "1") === "1",
   memoryFilter: "all",
   memoryOpen: false,
+
+  // nexus
+  canvases: [],
+  nexus: null,            // active canvas {meta, nodes:[], edges:[]}
+  nexusViewport: { x: 3000, y: 3000, scale: 1 },  // pan offset (world starts centered)
+  nexusSelected: null,    // selected node id
+  nexusConnecting: null,  // {fromNodeId, x, y}
+
+  // vault
+  vaultEntries: [],
+  vaultActive: null,      // active entry id (or null = new)
+  vaultDraft: { title: "", body: "", tags: [], mood: null },
+  vaultSaveState: "",     // 'saving' | 'saved' | ''
+  vaultSurfaces: [],
+
+  // broadcast
+  articles: [],
+  broadcastActive: null,  // {meta + translations}
+  broadcastTab: "compose",
+  broadcastLangs: safeParse(localStorage.getItem(STORAGE.broadcastLangs)) || ["es", "fr", "ja"],
+  broadcastStats: null,
 };
 
 const $  = (sel, root = document) => root.querySelector(sel);
@@ -218,7 +249,7 @@ function openProfileMenu(e) {
     const btn = ev.target.closest("[data-action]");
     if (!btn) return;
     if (btn.dataset.action === "logout")  handleLogout();
-    if (btn.dataset.action === "library") showView("hero");
+    if (btn.dataset.action === "library") showView("library");
     if (btn.dataset.action === "help")    openHelp();
     closeProfileMenu();
   });
@@ -265,7 +296,7 @@ window.handleLogin = async () => {
       state.targetLang = data.user.preferredTargetLang;
       localStorage.setItem(STORAGE.targetLang, state.targetLang);
     }
-    showView("hero");
+    showView("library");
   } catch (err) {
     errEl.textContent = err.message;
     errEl.hidden = false;
@@ -285,7 +316,7 @@ window.handleSignup = async () => {
       },
     });
     setAuth(data.accessToken, data.user);
-    showView("hero");
+    showView("library");
   } catch (err) {
     errEl.textContent = err.message;
     errEl.hidden = false;
@@ -306,23 +337,80 @@ async function handleLogout() {
 /* ════════════════════════ 5. View routing ═══════════════════════════════ */
 
 async function showView(view) {
+  const prev = state.view;
   state.view = view;
-  $("#view-auth").hidden   = view !== "auth";
-  $("#view-hero").hidden   = view !== "hero";
-  $("#view-studio").hidden = view !== "studio";
+
+  $("#view-auth").hidden      = view !== "auth";
+  $("#view-library").hidden   = view !== "library";
+  $("#view-nexus").hidden     = view !== "nexus";
+  $("#view-vault").hidden     = view !== "vault";
+  $("#view-broadcast").hidden = view !== "broadcast";
+  $("#view-studio").hidden    = view !== "studio";
 
   // Topbar visible everywhere except the cinematic auth screen
   $("#topbar").style.display = view === "auth" ? "none" : "";
 
-  if (view === "hero") {
+  // Hide workspace switcher when in studio (sub-view)
+  $("#workspace-switcher").style.display = (view === "auth" || view === "studio") ? "none" : "";
+
+  // Persist last workspace
+  if (WORKSPACES.includes(view)) {
+    state.workspace = view;
+    localStorage.setItem(STORAGE.workspace, view);
+    updateWorkspaceSwitcher();
+  }
+
+  // Lazy-load each workspace on entry
+  if (view === "library") {
     await refreshLanguages();
     await refreshDocuments();
+  } else if (view === "nexus") {
+    await refreshLanguages();
+    await refreshCanvases();
+  } else if (view === "vault") {
+    await refreshLanguages();
+    await refreshJournal();
+    await refreshSurfaces();
+  } else if (view === "broadcast") {
+    await refreshLanguages();
+    await refreshArticles();
   }
+
   if (view !== "studio") {
     closeMemoryDrawer();
     state.studioDocId = null;
   }
+
+  // Spatial transition (zoom feel) between top-level workspaces
+  if (prev && prev !== view && WORKSPACES.includes(view)) {
+    document.body.classList.add("is-warp");
+    setTimeout(() => document.body.classList.remove("is-warp"), 360);
+  }
+
   window.scrollTo({ top: 0, behavior: "instant" });
+}
+
+function updateWorkspaceSwitcher() {
+  const switcher = $("#workspace-switcher");
+  if (!switcher) return;
+  const pills = $$(".ws-pill", switcher);
+  let activePill = null;
+  pills.forEach((p) => {
+    const isActive = p.dataset.ws === state.workspace;
+    p.classList.toggle("is-active", isActive);
+    p.setAttribute("aria-selected", isActive ? "true" : "false");
+    if (isActive) activePill = p;
+  });
+  // Move the gold thumb behind the active pill
+  if (activePill) {
+    const railRect = switcher.getBoundingClientRect();
+    const r = activePill.getBoundingClientRect();
+    const thumb = $("#ws-switcher-thumb");
+    if (thumb) {
+      thumb.style.left  = `${r.left - railRect.left}px`;
+      thumb.style.width = `${r.width}px`;
+    }
+  }
 }
 
 
@@ -550,6 +638,18 @@ function renderLangRow(lang) {
 
 /* ════════════════════════ 7. Hero dashboard ═════════════════════════════ */
 
+function wireWorkspaceSwitcher() {
+  $("#workspace-switcher").addEventListener("click", (e) => {
+    const pill = e.target.closest(".ws-pill");
+    if (!pill) return;
+    const ws = pill.dataset.ws;
+    if (!ws || ws === state.workspace) return;
+    showView(ws);
+  });
+  // Keep the gold thumb aligned on resize
+  window.addEventListener("resize", () => requestAnimationFrame(updateWorkspaceSwitcher));
+}
+
 function wireHeroOnce() {
   // Auth tabs
   $("#tab-login").addEventListener("click", () => switchAuthTab("login"));
@@ -586,7 +686,7 @@ function wireHeroOnce() {
   // ⌘K / Ctrl+K shortcut
   document.addEventListener("keydown", (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-      if (state.view !== "hero") return;
+      if (state.view !== "library") return;
       const inField = e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA");
       if (inField && e.target.id !== "lang-search") return;
       e.preventDefault();
@@ -637,12 +737,12 @@ function wireHeroOnce() {
   // Brand link → hero
   $("#brand-link").addEventListener("click", (e) => {
     e.preventDefault();
-    if (state.user) showView("hero"); else showView("auth");
+    if (state.user) showView("library"); else showView("auth");
   });
 
   // Global paste-anywhere shortcut on hero
   document.addEventListener("paste", (e) => {
-    if (state.view !== "hero") return;
+    if (state.view !== "library") return;
     const target = e.target;
     const inField = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
     if (inField) return;
@@ -822,7 +922,7 @@ function upsertDoc(meta) {
 }
 
 function renderDocuments() {
-  if (state.view !== "hero") return;
+  if (state.view !== "library") return;
   const container = $("#doc-cards");
   const empty = $("#empty-state");
   const count = $("#history-count");
@@ -1160,7 +1260,7 @@ function setFocusParagraph(body, idx) {
 
 /* ── Studio bar wiring ── */
 function wireStudioOnce() {
-  $("#studio-back").addEventListener("click", () => showView("hero"));
+  $("#studio-back").addEventListener("click", () => showView("library"));
   $("#studio-download").addEventListener("click", studioDownload);
   $("#studio-delete").addEventListener("click", studioDelete);
   $("#studio-find").addEventListener("click", studioFind);
@@ -1217,7 +1317,7 @@ async function studioDelete() {
     state.documents = state.documents.filter((d) => d.docId !== state.studioMeta.docId);
     clearPoll(state.studioMeta.docId);
     toast("Manuscript deleted", "success");
-    showView("hero");
+    showView("library");
   } catch (err) {
     toast(err.message, "error");
   }
@@ -1666,18 +1766,1107 @@ function openHelp()  { $("#help-overlay").hidden = false; }
 function closeHelp() { $("#help-overlay").hidden = true; }
 
 
-/* ════════════════════════ 14. Boot ══════════════════════════════════════ */
+/* ════════════════════════ 14. NEXUS canvas ══════════════════════════════ */
+
+async function refreshCanvases() {
+  try {
+    const data = await api("/v1/canvases");
+    state.canvases = data.canvases || [];
+    renderCanvasesList();
+  } catch (err) { console.error(err); }
+}
+
+function renderCanvasesList() {
+  const grid = $("#nexus-grid");
+  const empty = $("#nexus-empty");
+  $("#nexus-list").hidden = !!state.nexus;
+  $("#nexus-editor").hidden = !state.nexus;
+  if (state.nexus) return;
+  if (!state.canvases.length) {
+    grid.innerHTML = ""; empty.hidden = false; return;
+  }
+  empty.hidden = true;
+  grid.innerHTML = state.canvases.map((c) => {
+    // Synthetic preview dots based on canvasId hash
+    const dots = [];
+    let h = 0; for (let i = 0; i < c.canvasId.length; i++) h = (h * 31 + c.canvasId.charCodeAt(i)) >>> 0;
+    const n = Math.min(5, Math.max(2, c.nodeCount || 3));
+    for (let i = 0; i < n; i++) {
+      h = (h * 1664525 + 1013904223) >>> 0;
+      const x = 10 + ((h >>> 0) % 80);
+      h = (h * 1664525 + 1013904223) >>> 0;
+      const y = 30 + ((h >>> 0) % 50);
+      dots.push(`<div class="nexus-card__minihash" style="left:${x}%;top:${y}%"></div>`);
+    }
+    return `
+      <article class="nexus-card" data-id="${c.canvasId}" tabindex="0">
+        <div class="nexus-card__preview"></div>
+        <div class="nexus-card__nodes">${dots.join("")}</div>
+        <h3 class="nexus-card__title">${escapeHtml(c.title || "Untitled canvas")}</h3>
+        <div class="nexus-card__meta">
+          <span class="mono">${c.nodeCount || 0} nodes</span>
+          <span>·</span>
+          <span class="mono">${c.edgeCount || 0} edges</span>
+          <span>·</span>
+          <span>${formatRelative(c.updatedAt || c.createdAt)}</span>
+        </div>
+      </article>`;
+  }).join("");
+  $$("#nexus-grid .nexus-card").forEach((el) => {
+    el.addEventListener("click", () => openCanvas(el.dataset.id));
+    el.addEventListener("keydown", (e) => { if (e.key === "Enter") openCanvas(el.dataset.id); });
+  });
+}
+
+async function createCanvas() {
+  try {
+    const data = await api("/v1/canvases", { method: "POST", body: { title: "New canvas" } });
+    state.canvases.unshift(data);
+    await openCanvas(data.canvasId);
+  } catch (err) { toast(err.message, "error"); }
+}
+
+async function openCanvas(canvasId) {
+  try {
+    const data = await api(`/v1/canvases/${canvasId}`);
+    state.nexus = data;
+    state.nexusViewport = { x: 3000, y: 3000, scale: 1 };
+    state.nexusSelected = null;
+    renderCanvasesList();
+    renderCanvasEditor();
+  } catch (err) { toast(err.message, "error"); }
+}
+
+function closeCanvas() {
+  state.nexus = null;
+  renderCanvasesList();
+}
+
+function renderCanvasEditor() {
+  if (!state.nexus) return;
+  const c = state.nexus;
+  $("#nexus-title").value = c.title || "";
+  $("#nexus-node-count").textContent = `${c.nodes.length} node${c.nodes.length === 1 ? "" : "s"}`;
+  $("#nexus-edge-count").textContent = `${c.edges.length} edge${c.edges.length === 1 ? "" : "s"}`;
+  applyNexusTransform();
+  renderNexusNodes();
+  renderNexusEdges();
+}
+
+function applyNexusTransform() {
+  const v = state.nexusViewport;
+  const world = $("#nexus-world");
+  if (world) world.style.transform = `translate3d(${v.x}px, ${v.y}px, 0) scale(${v.scale})`;
+  $("#nexus-zoom-pct").textContent = `${Math.round(v.scale * 100)}%`;
+}
+
+function renderNexusNodes() {
+  if (!state.nexus) return;
+  const host = $("#nexus-nodes");
+  const sel = state.nexusSelected;
+  host.innerHTML = state.nexus.nodes.map((n) => `
+    <div class="nexus-node ${sel === n.nodeId ? "is-selected" : ""}" data-id="${n.nodeId}"
+         style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px">
+      <div class="nexus-node__head">
+        <input class="nexus-node__title" data-action="title" type="text" placeholder="Untitled"
+               value="${escapeHtml(n.title || "")}" maxlength="120" />
+        <button class="nexus-node__action" data-action="delete" type="button" title="Delete node">
+          <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <textarea class="nexus-node__body" data-action="body" placeholder="Write a scene, a character, a quote, a question…">${escapeHtml(n.content || "")}</textarea>
+      <span class="nexus-node__port" data-action="port" title="Drag to another node to connect"></span>
+    </div>`).join("");
+  if (!state.nexus.nodes.length) {
+    host.innerHTML = `<div class="nexus-empty-tip"><strong>Begin the sprawl.</strong>Click + Node or double-click the canvas to drop your first thought.</div>`;
+  }
+}
+
+function renderNexusEdges() {
+  if (!state.nexus) return;
+  const svg = $("#nexus-edges");
+  const nodes = state.nexus.nodes;
+  const byId = new Map(nodes.map((n) => [n.nodeId, n]));
+  let paths = "";
+  for (const e of state.nexus.edges) {
+    const a = byId.get(e.from);
+    const b = byId.get(e.to);
+    if (!a || !b) continue;
+    const ax = a.x + a.w;
+    const ay = a.y + a.h / 2;
+    const bx = b.x;
+    const by = b.y + b.h / 2;
+    const cx = (ax + bx) / 2;
+    const path = `M ${ax} ${ay} C ${cx} ${ay}, ${cx} ${by}, ${bx} ${by}`;
+    paths += `<path d="${path}" data-edge="${e.edgeId}" marker-end="url(#nexus-arrow)" />`;
+  }
+  // Preserve <defs>
+  const defs = svg.querySelector("defs");
+  svg.innerHTML = "";
+  if (defs) svg.appendChild(defs);
+  svg.insertAdjacentHTML("beforeend", paths);
+}
+
+function wireNexusOnce() {
+  $("#nexus-new").addEventListener("click", createCanvas);
+  $("#nexus-back").addEventListener("click", closeCanvas);
+  $("#nexus-zoom-in").addEventListener("click", () => zoomNexus(1.2));
+  $("#nexus-zoom-out").addEventListener("click", () => zoomNexus(1 / 1.2));
+  $("#nexus-zoom-reset").addEventListener("click", () => {
+    state.nexusViewport = { x: 3000, y: 3000, scale: 1 };
+    applyNexusTransform();
+  });
+  $("#nexus-add-node").addEventListener("click", () => addNode());
+  $("#nexus-compile").addEventListener("click", agenticCompile);
+  $("#nexus-title").addEventListener("change", (e) => {
+    if (!state.nexus) return;
+    api(`/v1/canvases/${state.nexus.canvasId}`, { method: "PATCH", body: { title: e.target.value } })
+      .then((d) => { state.nexus.title = d.title; refreshCanvases(); })
+      .catch((err) => toast(err.message, "error"));
+  });
+
+  const canvas = $("#nexus-canvas");
+  const world  = $("#nexus-world");
+
+  // Pan (drag empty space) and zoom (wheel)
+  let pan = null;
+  canvas.addEventListener("pointerdown", (e) => {
+    if (e.target.closest(".nexus-node")) return;
+    pan = { x: e.clientX, y: e.clientY, ox: state.nexusViewport.x, oy: state.nexusViewport.y };
+    canvas.classList.add("is-panning");
+    canvas.setPointerCapture(e.pointerId);
+    state.nexusSelected = null;
+    renderNexusNodes();
+  });
+  canvas.addEventListener("pointermove", (e) => {
+    if (!pan) return;
+    state.nexusViewport.x = pan.ox + (e.clientX - pan.x);
+    state.nexusViewport.y = pan.oy + (e.clientY - pan.y);
+    applyNexusTransform();
+  });
+  canvas.addEventListener("pointerup", (e) => {
+    pan = null; canvas.classList.remove("is-panning");
+    try { canvas.releasePointerCapture(e.pointerId); } catch (_) {}
+  });
+  canvas.addEventListener("wheel", (e) => {
+    if (!state.nexus) return;
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? 1 / 1.1 : 1.1;
+    zoomAt(delta, e.clientX, e.clientY);
+  }, { passive: false });
+  canvas.addEventListener("dblclick", (e) => {
+    if (e.target.closest(".nexus-node")) return;
+    const rect = canvas.getBoundingClientRect();
+    const v = state.nexusViewport;
+    const wx = (e.clientX - rect.left - v.x) / v.scale - 120;
+    const wy = (e.clientY - rect.top  - v.y) / v.scale - 70;
+    addNode({ x: wx, y: wy });
+  });
+
+  // Node interactions (delegate from world)
+  world.addEventListener("pointerdown", onNodePointerDown);
+  world.addEventListener("input", onNodeInput);
+  world.addEventListener("change", onNodeChange);
+  world.addEventListener("click", onNodeClick);
+  world.addEventListener("focusin", onNodeFocus);
+
+  // Cancel pending edge on escape
+  document.addEventListener("keydown", (e) => {
+    if (state.view !== "nexus") return;
+    if (e.key === "Escape" && state.nexusConnecting) {
+      cancelEdgeConnection();
+    }
+    if (e.key === "Delete" || e.key === "Backspace") {
+      const active = document.activeElement;
+      if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) return;
+      if (state.nexusSelected) {
+        e.preventDefault();
+        deleteNode(state.nexusSelected);
+      }
+    }
+  });
+}
+
+function zoomNexus(factor) {
+  const rect = $("#nexus-canvas").getBoundingClientRect();
+  zoomAt(factor, rect.left + rect.width / 2, rect.top + rect.height / 2);
+}
+function zoomAt(factor, clientX, clientY) {
+  const rect = $("#nexus-canvas").getBoundingClientRect();
+  const v = state.nexusViewport;
+  const next = clamp(v.scale * factor, 0.25, 2.5);
+  const f = next / v.scale;
+  // Zoom around the cursor
+  v.x = clientX - rect.left - (clientX - rect.left - v.x) * f;
+  v.y = clientY - rect.top  - (clientY - rect.top  - v.y) * f;
+  v.scale = next;
+  applyNexusTransform();
+}
+
+async function addNode(pos) {
+  if (!state.nexus) return;
+  const x = pos?.x ?? (3000 + Math.random() * 100 - 50);
+  const y = pos?.y ?? (3000 + Math.random() * 100 - 50);
+  try {
+    const data = await api(`/v1/canvases/${state.nexus.canvasId}/nodes`, {
+      method: "POST",
+      body: { x, y, w: 240, h: 160, title: "", content: "" },
+    });
+    state.nexus.nodes.push(data);
+    state.nexusSelected = data.nodeId;
+    renderNexusNodes();
+    renderNexusEdges();
+    // Focus the new node's body for instant typing
+    setTimeout(() => {
+      const ta = $(`.nexus-node[data-id="${data.nodeId}"] textarea`);
+      if (ta) ta.focus();
+    }, 30);
+    updateCanvasCounts();
+  } catch (err) { toast(err.message, "error"); }
+}
+
+async function deleteNode(nodeId) {
+  if (!state.nexus) return;
+  try {
+    await api(`/v1/canvases/${state.nexus.canvasId}/nodes/${nodeId}`, { method: "DELETE" });
+    state.nexus.nodes = state.nexus.nodes.filter((n) => n.nodeId !== nodeId);
+    state.nexus.edges = state.nexus.edges.filter((e) => e.from !== nodeId && e.to !== nodeId);
+    if (state.nexusSelected === nodeId) state.nexusSelected = null;
+    renderNexusNodes();
+    renderNexusEdges();
+    updateCanvasCounts();
+  } catch (err) { toast(err.message, "error"); }
+}
+
+function onNodePointerDown(e) {
+  const portEl = e.target.closest('[data-action="port"]');
+  if (portEl) {
+    const nodeEl = portEl.closest(".nexus-node");
+    startEdgeConnection(nodeEl.dataset.id, e);
+    return;
+  }
+  const node = e.target.closest(".nexus-node");
+  if (!node) return;
+  // Ignore drags that start on inputs/buttons inside the node
+  if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "BUTTON") return;
+  startNodeDrag(node, e);
+}
+function onNodeClick(e) {
+  const node = e.target.closest(".nexus-node");
+  if (!node) return;
+  state.nexusSelected = node.dataset.id;
+  $$("#nexus-nodes .nexus-node").forEach((n) => n.classList.toggle("is-selected", n.dataset.id === state.nexusSelected));
+  // If pending edge, complete it
+  if (state.nexusConnecting && state.nexusConnecting.fromNodeId !== node.dataset.id) {
+    completeEdgeConnection(node.dataset.id);
+  }
+  // Delete button
+  if (e.target.closest('[data-action="delete"]')) {
+    deleteNode(node.dataset.id);
+  }
+}
+function onNodeFocus(e) {
+  const node = e.target.closest(".nexus-node");
+  if (!node) return;
+  state.nexusSelected = node.dataset.id;
+}
+function onNodeInput(e) {
+  const node = e.target.closest(".nexus-node");
+  if (!node) return;
+  const id = node.dataset.id;
+  const meta = state.nexus.nodes.find((n) => n.nodeId === id);
+  if (!meta) return;
+  if (e.target.dataset.action === "title") meta.title = e.target.value;
+  if (e.target.dataset.action === "body")  meta.content = e.target.value;
+  scheduleNodePatch(id);
+}
+function onNodeChange(e) {
+  // Force flush patch on blur
+  const node = e.target.closest(".nexus-node");
+  if (!node) return;
+  flushNodePatch(node.dataset.id);
+}
+
+const _nodePatchTimers = new Map();
+const _nodePatchPending = new Map();
+function scheduleNodePatch(nodeId) {
+  if (_nodePatchTimers.has(nodeId)) clearTimeout(_nodePatchTimers.get(nodeId));
+  _nodePatchTimers.set(nodeId, setTimeout(() => flushNodePatch(nodeId), 600));
+}
+async function flushNodePatch(nodeId, extra = {}) {
+  if (!state.nexus) return;
+  const meta = state.nexus.nodes.find((n) => n.nodeId === nodeId);
+  if (!meta) return;
+  if (_nodePatchTimers.has(nodeId)) { clearTimeout(_nodePatchTimers.get(nodeId)); _nodePatchTimers.delete(nodeId); }
+  try {
+    await api(`/v1/canvases/${state.nexus.canvasId}/nodes/${nodeId}`, {
+      method: "PATCH",
+      body: {
+        title: meta.title ?? "",
+        content: meta.content ?? "",
+        x: meta.x, y: meta.y, w: meta.w, h: meta.h,
+        ...extra,
+      },
+    });
+  } catch (err) { console.error("node patch", err); }
+}
+
+function startNodeDrag(nodeEl, e) {
+  const id = nodeEl.dataset.id;
+  const meta = state.nexus.nodes.find((n) => n.nodeId === id);
+  if (!meta) return;
+  const start = { mx: e.clientX, my: e.clientY, x: meta.x, y: meta.y };
+  const scale = state.nexusViewport.scale;
+  nodeEl.classList.add("is-dragging");
+  state.nexusSelected = id;
+  $$("#nexus-nodes .nexus-node").forEach((n) => n.classList.toggle("is-selected", n.dataset.id === id));
+  e.preventDefault();
+
+  function move(ev) {
+    meta.x = start.x + (ev.clientX - start.mx) / scale;
+    meta.y = start.y + (ev.clientY - start.my) / scale;
+    nodeEl.style.left = `${meta.x}px`;
+    nodeEl.style.top  = `${meta.y}px`;
+    renderNexusEdges();
+  }
+  function up() {
+    nodeEl.classList.remove("is-dragging");
+    document.removeEventListener("pointermove", move);
+    document.removeEventListener("pointerup", up);
+    flushNodePatch(id);
+  }
+  document.addEventListener("pointermove", move);
+  document.addEventListener("pointerup", up);
+}
+
+function startEdgeConnection(fromId, e) {
+  state.nexusConnecting = { fromNodeId: fromId };
+  $("#nexus-canvas").classList.add("is-connecting");
+  const svg = $("#nexus-pending-edge");
+  svg.hidden = false;
+  e.preventDefault();
+  function move(ev) {
+    const fromNode = state.nexus.nodes.find((n) => n.nodeId === fromId);
+    if (!fromNode) return;
+    const rect = $("#nexus-canvas").getBoundingClientRect();
+    const v = state.nexusViewport;
+    const fx = fromNode.x + fromNode.w;
+    const fy = fromNode.y + fromNode.h / 2;
+    const tx = (ev.clientX - rect.left - v.x) / v.scale;
+    const ty = (ev.clientY - rect.top  - v.y) / v.scale;
+    const cx = (fx + tx) / 2;
+    svg.innerHTML = `<path d="M ${fx} ${fy} C ${cx} ${fy}, ${cx} ${ty}, ${tx} ${ty}" />`;
+  }
+  function up(ev) {
+    document.removeEventListener("pointermove", move);
+    document.removeEventListener("pointerup", up);
+    const elAt = document.elementFromPoint(ev.clientX, ev.clientY);
+    const toNode = elAt?.closest?.(".nexus-node");
+    if (toNode && toNode.dataset.id !== fromId) {
+      completeEdgeConnection(toNode.dataset.id);
+    } else {
+      cancelEdgeConnection();
+    }
+  }
+  document.addEventListener("pointermove", move);
+  document.addEventListener("pointerup", up);
+}
+function cancelEdgeConnection() {
+  state.nexusConnecting = null;
+  $("#nexus-canvas").classList.remove("is-connecting");
+  $("#nexus-pending-edge").innerHTML = "";
+  $("#nexus-pending-edge").hidden = true;
+}
+async function completeEdgeConnection(toNodeId) {
+  if (!state.nexusConnecting || !state.nexus) { cancelEdgeConnection(); return; }
+  const from = state.nexusConnecting.fromNodeId;
+  cancelEdgeConnection();
+  try {
+    const data = await api(`/v1/canvases/${state.nexus.canvasId}/edges`, {
+      method: "POST",
+      body: { fromNodeId: from, toNodeId },
+    });
+    state.nexus.edges.push(data);
+    renderNexusEdges();
+    updateCanvasCounts();
+  } catch (err) { toast(err.message, "error"); }
+}
+
+function updateCanvasCounts() {
+  if (!state.nexus) return;
+  $("#nexus-node-count").textContent = `${state.nexus.nodes.length} node${state.nexus.nodes.length === 1 ? "" : "s"}`;
+  $("#nexus-edge-count").textContent = `${state.nexus.edges.length} edge${state.nexus.edges.length === 1 ? "" : "s"}`;
+}
+
+async function agenticCompile() {
+  if (!state.nexus) return;
+  if (!state.nexus.nodes.length) { toast("Add some nodes first", "error"); return; }
+  const btn = $("#nexus-compile");
+  btn.disabled = true;
+  btn.classList.add("is-loading");
+  const body = $("#nexus-panel-body");
+  body.innerHTML = `
+    <div class="nexus-panel__placeholder">
+      <span class="spinner" style="width:24px;height:24px;border-width:3px"></span>
+      <p><em>Compiling…</em><br/>Threading your nodes into a draft.</p>
+    </div>`;
+  try {
+    const data = await api(`/v1/canvases/${state.nexus.canvasId}/compile`, { method: "POST" });
+    renderNexusCompiled(data);
+    toast("Compile complete", "success");
+  } catch (err) {
+    body.innerHTML = `<div class="nexus-panel__placeholder"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg><p>${escapeHtml(err.message)}</p></div>`;
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove("is-loading");
+  }
+}
+
+function renderNexusCompiled(data) {
+  const body = $("#nexus-panel-body");
+  const foot = $("#nexus-panel-foot");
+  state.nexusCompiled = data;
+  const draft = data.draft || "";
+  const html = `
+    <section class="nexus-outline">
+      <p class="micro-label" style="margin-bottom:8px">Outline</p>
+      <ol>
+        ${(data.outline || []).map((o) => `
+          <li>
+            <span></span>
+            <div>
+              <h5>${escapeHtml(o.heading || "(untitled)")}</h5>
+              <p>${escapeHtml(o.summary || "")}</p>
+            </div>
+          </li>`).join("")}
+      </ol>
+    </section>
+    <section>
+      <p class="micro-label" style="margin-bottom:8px">First draft</p>
+      <div class="nexus-draft">${markdownToHtml(draft)}</div>
+    </section>`;
+  body.innerHTML = html;
+  foot.hidden = false;
+}
+
+function markdownToHtml(md) {
+  // Minimal Markdown: # headings, paragraphs, bold/italic, lists
+  const safe = escapeHtml(md);
+  let html = safe
+    .replace(/^### (.+)$/gm, "<h3>$1</h3>")
+    .replace(/^## (.+)$/gm,  "<h2>$1</h2>")
+    .replace(/^# (.+)$/gm,   "<h1>$1</h1>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*([^*]+)\*/g, "<em>$1</em>");
+  return html
+    .split(/\n{2,}/)
+    .map((blk) => blk.startsWith("<h") ? blk : `<p>${blk.replace(/\n/g, "<br/>")}</p>`)
+    .join("");
+}
+
+
+/* ════════════════════════ 15. VAULT journal ═════════════════════════════ */
+
+async function refreshJournal() {
+  try {
+    const data = await api("/v1/journal/entries?limit=120");
+    state.vaultEntries = data.entries || [];
+    renderVaultTimeline();
+    // If no entry is currently being composed, hydrate from the most recent
+    if (!state.vaultActive && state.vaultEntries.length) {
+      loadVaultEntry(state.vaultEntries[0].entryId);
+    } else if (!state.vaultEntries.length) {
+      resetVaultDraft();
+      renderVaultEditor();
+    }
+  } catch (err) { console.error(err); }
+}
+
+async function refreshSurfaces() {
+  try {
+    const data = await api("/v1/journal/surface");
+    state.vaultSurfaces = data.surfaces || [];
+    // Show the freshest one once per visit
+    if (state.vaultSurfaces.length) {
+      const next = state.vaultSurfaces[0];
+      showVaultSurface(next);
+    }
+  } catch (err) { console.error(err); }
+}
+
+function showVaultSurface(s) {
+  if (!s?.entry) return;
+  $("#vault-surface-reason").textContent = s.reason || "Memory";
+  $("#vault-surface-title").textContent = s.entry.title || "Untitled entry";
+  $("#vault-surface-preview").textContent = (s.entry.body || "").slice(0, 200);
+  $("#vault-surface").hidden = false;
+  $("#vault-surface-open").onclick = () => {
+    $("#vault-surface").hidden = true;
+    loadVaultEntry(s.entry.entryId);
+  };
+}
+
+function renderVaultTimeline() {
+  const list = $("#vault-timeline-list");
+  if (!state.vaultEntries.length) {
+    list.innerHTML = `<div class="library__empty" style="margin:14px;padding:20px;font-size:12px">Your vault is empty. Click <em>New</em> above and start writing.</div>`;
+    return;
+  }
+  // Group by month label
+  const groups = new Map();
+  for (const e of state.vaultEntries) {
+    const d = new Date(e.createdAt);
+    const key = d.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(e);
+  }
+  let html = "";
+  for (const [month, entries] of groups) {
+    html += `<div class="vault-month">${escapeHtml(month)}</div>`;
+    for (const e of entries) {
+      const d = new Date(e.createdAt);
+      const date = d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) + " · " + d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+      const isActive = state.vaultActive === e.entryId;
+      const title = e.title || (e.body || "").slice(0, 60).trim() || "(untitled)";
+      const tags = (e.tags || []).slice(0, 3);
+      html += `
+        <button class="vault-entry ${isActive ? "is-active" : ""}" data-id="${e.entryId}" type="button">
+          <span class="vault-entry__date">${escapeHtml(date)}</span>
+          <span class="vault-entry__title">${escapeHtml(title.slice(0, 60))}</span>
+          <span class="vault-entry__excerpt">${escapeHtml((e.body || "").slice(0, 80))}</span>
+          ${tags.length ? `<span class="vault-entry__tags">${tags.map((t) => `<span class="vault-entry__tag">${escapeHtml(t)}</span>`).join("")}</span>` : ""}
+        </button>`;
+    }
+  }
+  list.innerHTML = html;
+}
+
+function loadVaultEntry(entryId) {
+  const e = state.vaultEntries.find((x) => x.entryId === entryId);
+  if (!e) return;
+  state.vaultActive = entryId;
+  state.vaultDraft = {
+    title: e.title || "",
+    body:  e.body  || "",
+    tags:  e.tags || [],
+    mood:  e.mood,
+  };
+  renderVaultEditor();
+  renderVaultTimeline();
+}
+
+function resetVaultDraft() {
+  state.vaultActive = null;
+  state.vaultDraft = { title: "", body: "", tags: [], mood: null };
+}
+
+function renderVaultEditor() {
+  $("#vault-title").value = state.vaultDraft.title || "";
+  $("#vault-body").value  = state.vaultDraft.body  || "";
+  renderVaultChips();
+  updateVaultWords();
+}
+
+function renderVaultChips() {
+  const tagHost = $("#vault-tags");
+  const moodEl = $("#vault-mood");
+  tagHost.innerHTML = (state.vaultDraft.tags || []).map((t) => `<span class="vault-tags__pill">#${escapeHtml(t)}</span>`).join("");
+  if (state.vaultDraft.mood) {
+    moodEl.textContent = `mood · ${state.vaultDraft.mood}`;
+    moodEl.hidden = false;
+  } else {
+    moodEl.hidden = true;
+  }
+  updateVaultSaveState(state.vaultSaveState);
+}
+
+function updateVaultSaveState(s) {
+  state.vaultSaveState = s;
+  const el = $("#vault-save");
+  el.classList.remove("is-saving", "is-saved");
+  if (s === "saving") { el.textContent = "saving…"; el.classList.add("is-saving"); }
+  else if (s === "saved") { el.textContent = "saved"; el.classList.add("is-saved"); }
+  else el.textContent = "";
+}
+
+function updateVaultWords() {
+  const text = $("#vault-body").value || "";
+  const words = (text.match(/\S+/g) || []).length;
+  const el = $("#vault-words");
+  el.textContent = `${words.toLocaleString()} word${words === 1 ? "" : "s"}`;
+  el.classList.toggle("is-glowing", words > 200);
+}
+
+let _vaultSaveTimer = null;
+function scheduleVaultSave() {
+  if (_vaultSaveTimer) clearTimeout(_vaultSaveTimer);
+  updateVaultSaveState("saving");
+  _vaultSaveTimer = setTimeout(flushVaultSave, 900);
+}
+
+async function flushVaultSave() {
+  _vaultSaveTimer = null;
+  const draft = state.vaultDraft;
+  const body = ($("#vault-body").value || "").trim();
+  const title = ($("#vault-title").value || "").trim();
+  if (!body && !title) { updateVaultSaveState(""); return; }
+
+  draft.title = title;
+  draft.body  = body;
+
+  try {
+    if (!state.vaultActive) {
+      const data = await api("/v1/journal/entries", {
+        method: "POST",
+        body: { title, body, autotag: true },
+      });
+      state.vaultActive = data.entryId;
+      state.vaultDraft.tags = data.tags || [];
+      state.vaultDraft.mood = data.mood;
+      state.vaultEntries.unshift(data);
+    } else {
+      const data = await api(`/v1/journal/entries/${state.vaultActive}`, {
+        method: "PATCH",
+        body: { title, body, retag: true },
+      });
+      state.vaultDraft.tags = data.tags || [];
+      state.vaultDraft.mood = data.mood;
+      const idx = state.vaultEntries.findIndex((e) => e.entryId === state.vaultActive);
+      if (idx >= 0) state.vaultEntries[idx] = data;
+    }
+    renderVaultChips();
+    renderVaultTimeline();
+    updateVaultSaveState("saved");
+    // Poll once more to pick up async auto-tags
+    setTimeout(refreshVaultActive, 4000);
+  } catch (err) {
+    toast(err.message, "error");
+    updateVaultSaveState("");
+  }
+}
+
+async function refreshVaultActive() {
+  if (!state.vaultActive) return;
+  try {
+    const data = await api(`/v1/journal/entries/${state.vaultActive}`);
+    state.vaultDraft.tags = data.tags || [];
+    state.vaultDraft.mood = data.mood;
+    const idx = state.vaultEntries.findIndex((e) => e.entryId === state.vaultActive);
+    if (idx >= 0) state.vaultEntries[idx] = data;
+    renderVaultChips();
+    renderVaultTimeline();
+  } catch (err) { /* swallow */ }
+}
+
+function wireVaultOnce() {
+  $("#vault-new").addEventListener("click", () => {
+    if (_vaultSaveTimer) flushVaultSave();
+    resetVaultDraft();
+    renderVaultEditor();
+    renderVaultTimeline();
+    setTimeout(() => $("#vault-title").focus(), 30);
+  });
+  $("#vault-timeline-list").addEventListener("click", (e) => {
+    const btn = e.target.closest(".vault-entry");
+    if (btn) loadVaultEntry(btn.dataset.id);
+  });
+  ["input"].forEach((ev) => {
+    $("#vault-title").addEventListener(ev, scheduleVaultSave);
+    $("#vault-body").addEventListener(ev, () => { updateVaultWords(); scheduleVaultSave(); });
+  });
+  $("#vault-surface-close").addEventListener("click", () => { $("#vault-surface").hidden = true; });
+
+  // Flush on tab away
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden && _vaultSaveTimer) flushVaultSave();
+  });
+  window.addEventListener("beforeunload", () => { if (_vaultSaveTimer) flushVaultSave(); });
+}
+
+
+/* ════════════════════════ 16. BROADCAST publishing ══════════════════════ */
+
+async function refreshArticles() {
+  try {
+    const data = await api("/v1/articles");
+    state.articles = data.articles || [];
+    renderArticlesList();
+  } catch (err) { console.error(err); }
+}
+
+function renderArticlesList() {
+  $("#broadcast-list").hidden = !!state.broadcastActive;
+  $("#broadcast-composer").hidden = !state.broadcastActive;
+  if (state.broadcastActive) return;
+  const grid = $("#broadcast-grid");
+  const empty = $("#broadcast-empty");
+  if (!state.articles.length) {
+    grid.innerHTML = ""; empty.hidden = false; return;
+  }
+  empty.hidden = true;
+  grid.innerHTML = state.articles.map((a) => {
+    const langs = (a.languages || []).slice(0, 5);
+    return `
+      <article class="broadcast-card" data-id="${a.articleId}" tabindex="0">
+        <div class="broadcast-card__cover">${escapeHtml(a.coverEmoji || "✦")}</div>
+        <div class="broadcast-card__main">
+          <h3 class="broadcast-card__title">${escapeHtml(a.title || "Untitled")}</h3>
+          <div class="broadcast-card__meta">
+            <span>${a.status === "published" ? `<span class="lang-pill lang-pill--gold">Live</span>` : `<span class="lang-pill">Draft</span>`}</span>
+            <span class="mono">${(a.wordCount || 0).toLocaleString()} words</span>
+            ${langs.length ? `<span>·</span><span class="mono">${escapeHtml(langs.join(" · "))}</span>` : ""}
+            <span>·</span><span>${formatRelative(a.updatedAt || a.createdAt)}</span>
+          </div>
+          ${a.subtitle ? `<p class="broadcast-card__excerpt">${escapeHtml(a.subtitle)}</p>` : ""}
+        </div>
+      </article>`;
+  }).join("");
+  $$("#broadcast-grid .broadcast-card").forEach((el) => {
+    el.addEventListener("click", () => openArticle(el.dataset.id));
+    el.addEventListener("keydown", (e) => { if (e.key === "Enter") openArticle(el.dataset.id); });
+  });
+}
+
+async function createArticle() {
+  try {
+    const data = await api("/v1/articles", { method: "POST", body: { title: "Untitled draft", body: "" } });
+    state.articles.unshift(data);
+    await openArticle(data.articleId);
+  } catch (err) { toast(err.message, "error"); }
+}
+
+async function openArticle(articleId) {
+  try {
+    const data = await api(`/v1/articles/${articleId}`);
+    state.broadcastActive = data;
+    state.broadcastTab = "compose";
+    renderArticlesList();
+    renderComposer();
+  } catch (err) { toast(err.message, "error"); }
+}
+
+function closeArticle() {
+  if (_broadcastSaveTimer) flushBroadcastSave();
+  state.broadcastActive = null;
+  state.broadcastStats = null;
+  renderArticlesList();
+}
+
+function renderComposer() {
+  const a = state.broadcastActive;
+  if (!a) return;
+  $("#broadcast-emoji").textContent = a.coverEmoji || "✦";
+  $("#broadcast-title").value = a.title || "";
+  $("#broadcast-subtitle").value = a.subtitle || "";
+  $("#broadcast-body").value = a.body || "";
+  $("#broadcast-status").textContent = a.status === "published" ? "Published" : "Draft";
+  $("#broadcast-status").classList.toggle("broadcast-status--published", a.status === "published");
+  $("#broadcast-status").classList.toggle("broadcast-status--draft", a.status !== "published");
+  $("#broadcast-publish").innerHTML = a.status === "published"
+    ? '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12l5 5L20 7"/></svg><span>Republish</span>'
+    : '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12l5 5L20 7"/></svg><span>Publish</span>';
+  $("#broadcast-unpublish").hidden = a.status !== "published";
+  switchBroadcastTab(state.broadcastTab);
+}
+
+function switchBroadcastTab(tab) {
+  state.broadcastTab = tab;
+  $$(".broadcast-bar__tabs .ws-pill").forEach((p) => p.classList.toggle("is-active", p.dataset.tab === tab));
+  $("#broadcast-tab-compose").hidden = tab !== "compose";
+  $("#broadcast-tab-global").hidden  = tab !== "global";
+  $("#broadcast-tab-stats").hidden   = tab !== "stats";
+  if (tab === "global") {
+    renderGlobalPicker();
+    renderPreviews();
+  }
+  if (tab === "stats") {
+    loadStats();
+  }
+}
+
+let _broadcastSaveTimer = null;
+function scheduleBroadcastSave() {
+  if (_broadcastSaveTimer) clearTimeout(_broadcastSaveTimer);
+  $("#broadcast-save-state").textContent = "saving…";
+  $("#broadcast-save-state").classList.remove("is-saved");
+  $("#broadcast-save-state").classList.add("is-saving");
+  _broadcastSaveTimer = setTimeout(flushBroadcastSave, 900);
+}
+async function flushBroadcastSave() {
+  _broadcastSaveTimer = null;
+  const a = state.broadcastActive;
+  if (!a) return;
+  const updates = {
+    title:      $("#broadcast-title").value,
+    subtitle:   $("#broadcast-subtitle").value,
+    body:       $("#broadcast-body").value,
+    coverEmoji: $("#broadcast-emoji").textContent || "✦",
+  };
+  try {
+    const data = await api(`/v1/articles/${a.articleId}`, { method: "PATCH", body: updates });
+    Object.assign(state.broadcastActive, data);
+    const idx = state.articles.findIndex((x) => x.articleId === a.articleId);
+    if (idx >= 0) state.articles[idx] = { ...state.articles[idx], ...data };
+    $("#broadcast-save-state").textContent = "saved";
+    $("#broadcast-save-state").classList.remove("is-saving");
+    $("#broadcast-save-state").classList.add("is-saved");
+  } catch (err) {
+    toast(err.message, "error");
+    $("#broadcast-save-state").textContent = "";
+  }
+}
+
+const BROADCAST_LANG_OPTIONS = ["es", "fr", "de", "it", "pt", "ar", "ja", "ko", "zh", "hi", "tr", "ru"];
+
+function renderGlobalPicker() {
+  const host = $("#broadcast-langs");
+  const active = new Set(state.broadcastLangs);
+  host.innerHTML = BROADCAST_LANG_OPTIONS.map((code) => {
+    const lang = state.languages.find((l) => l.code === code);
+    const glyph = (NATIVE_NAMES[code] || lang?.name || code).slice(0, 4);
+    return `
+      <button class="broadcast-lang ${active.has(code) ? "is-on" : ""}" data-code="${code}" type="button" title="${escapeHtml(lang?.name || code)}">
+        <span class="broadcast-lang__glyph">${escapeHtml(glyph)}</span>
+        <span class="broadcast-lang__code">${escapeHtml(code)}</span>
+      </button>`;
+  }).join("");
+  $$("#broadcast-langs .broadcast-lang").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const code = btn.dataset.code;
+      const set = new Set(state.broadcastLangs);
+      if (set.has(code)) set.delete(code); else set.add(code);
+      state.broadcastLangs = Array.from(set);
+      localStorage.setItem(STORAGE.broadcastLangs, JSON.stringify(state.broadcastLangs));
+      btn.classList.toggle("is-on", set.has(code));
+    });
+  });
+}
+
+const RTL_CODES = new Set(["ar", "fa", "he", "ur"]);
+
+function renderPreviews() {
+  const host = $("#broadcast-previews");
+  const a = state.broadcastActive;
+  if (!a) { host.innerHTML = ""; return; }
+  const translations = new Map((a.translations || []).map((t) => [t.lang, t]));
+
+  const all = [["__source__", null], ...state.broadcastLangs.map((c) => [c, c])];
+  host.innerHTML = all.map(([key, code]) => {
+    if (key === "__source__") {
+      return previewCard({
+        code: a.sourceLang === "auto" ? "src" : a.sourceLang,
+        title: a.title, subtitle: a.subtitle, body: a.body,
+        nativeName: "Source",
+        rtl: false,
+      });
+    }
+    const t = translations.get(code);
+    if (!t || t.status === "translating") {
+      return previewCard({
+        code, nativeName: NATIVE_NAMES[code] || code,
+        title: "Translating…", subtitle: "", body: "Threading sentences across the world.",
+        rtl: RTL_CODES.has(code), state: "translating",
+      });
+    }
+    if (t.status === "failed") {
+      return previewCard({
+        code, nativeName: NATIVE_NAMES[code] || code,
+        title: t.title || a.title, subtitle: "", body: "Translation failed.",
+        rtl: RTL_CODES.has(code), state: "failed",
+      });
+    }
+    return previewCard({
+      code, nativeName: NATIVE_NAMES[code] || code,
+      title: t.title || a.title, subtitle: t.subtitle || "", body: t.body || "",
+      rtl: RTL_CODES.has(code),
+    });
+  }).join("");
+}
+
+function previewCard({ code, nativeName, title, subtitle, body, rtl, state: cardState }) {
+  const cls = cardState === "translating" ? "is-translating" : cardState === "failed" ? "is-failed" : "";
+  return `
+    <article class="broadcast-preview ${cls} ${rtl ? "is-rtl" : ""}">
+      <header class="broadcast-preview__head">
+        <span class="broadcast-preview__lang">${escapeHtml(code)}</span>
+        <span class="broadcast-preview__native">${escapeHtml(nativeName)}</span>
+      </header>
+      <div class="broadcast-preview__cover">${escapeHtml(state.broadcastActive?.coverEmoji || "✦")}</div>
+      <h3 class="broadcast-preview__title">${escapeHtml(title || "")}</h3>
+      ${subtitle ? `<p class="broadcast-preview__subtitle">${escapeHtml(subtitle)}</p>` : ""}
+      <div class="broadcast-preview__body">${escapeHtml((body || "").slice(0, 800))}</div>
+    </article>`;
+}
+
+async function translatePreviews() {
+  const a = state.broadcastActive;
+  if (!a) return;
+  if (!state.broadcastLangs.length) { toast("Pick at least one language", "error"); return; }
+  // Flush any pending body save first
+  if (_broadcastSaveTimer) await flushBroadcastSave();
+  const btn = $("#broadcast-translate");
+  btn.disabled = true;
+  try {
+    await api(`/v1/articles/${a.articleId}/translate`, {
+      method: "POST",
+      body: { targetLangs: state.broadcastLangs, model: TONES[state.tone].model },
+    });
+    // Optimistically mark languages as translating
+    state.broadcastActive.translations = state.broadcastLangs.map((c) => ({ lang: c, status: "translating" }));
+    renderPreviews();
+    pollArticle(a.articleId);
+  } catch (err) {
+    toast(err.message, "error");
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+const _articlePollHandles = new Map();
+function pollArticle(articleId) {
+  if (_articlePollHandles.has(articleId)) clearTimeout(_articlePollHandles.get(articleId));
+  const tick = async () => {
+    try {
+      const data = await api(`/v1/articles/${articleId}`);
+      if (state.broadcastActive?.articleId === articleId) {
+        Object.assign(state.broadcastActive, data);
+        renderPreviews();
+      }
+      const pending = (data.translations || []).filter((t) => t.status === "translating").length;
+      if (pending === 0) {
+        _articlePollHandles.delete(articleId);
+        toast("Previews ready", "success");
+        return;
+      }
+    } catch (err) { console.error(err); }
+    _articlePollHandles.set(articleId, setTimeout(tick, 2200));
+  };
+  _articlePollHandles.set(articleId, setTimeout(tick, 1200));
+}
+
+async function publishArticle() {
+  const a = state.broadcastActive;
+  if (!a) return;
+  if (!($("#broadcast-body").value || "").trim()) { toast("Write something first", "error"); return; }
+  if (_broadcastSaveTimer) await flushBroadcastSave();
+  try {
+    const data = await api(`/v1/articles/${a.articleId}/publish`, { method: "POST" });
+    Object.assign(state.broadcastActive, data);
+    const idx = state.articles.findIndex((x) => x.articleId === a.articleId);
+    if (idx >= 0) state.articles[idx] = { ...state.articles[idx], ...data };
+    renderComposer();
+    toast(`Live at ${data.publicUrl || "/r/" + data.slug}`, "success");
+  } catch (err) { toast(err.message, "error"); }
+}
+
+async function unpublishArticle() {
+  const a = state.broadcastActive;
+  if (!a) return;
+  try {
+    const data = await api(`/v1/articles/${a.articleId}/unpublish`, { method: "POST" });
+    Object.assign(state.broadcastActive, data);
+    renderComposer();
+    toast("Article unpublished");
+  } catch (err) { toast(err.message, "error"); }
+}
+
+async function deleteArticle() {
+  const a = state.broadcastActive;
+  if (!a) return;
+  if (!confirm(`Delete "${a.title || "this article"}" permanently?`)) return;
+  try {
+    await api(`/v1/articles/${a.articleId}`, { method: "DELETE" });
+    state.articles = state.articles.filter((x) => x.articleId !== a.articleId);
+    state.broadcastActive = null;
+    renderArticlesList();
+    toast("Article deleted");
+  } catch (err) { toast(err.message, "error"); }
+}
+
+async function loadStats() {
+  const a = state.broadcastActive;
+  if (!a) return;
+  try {
+    const data = await api(`/v1/articles/${a.articleId}/stats`);
+    state.broadcastStats = data;
+    renderStats(data);
+  } catch (err) { toast(err.message, "error"); }
+}
+
+function renderStats(s) {
+  $("#stats-total").textContent     = (s.totalViews || 0).toLocaleString();
+  $("#stats-unique").textContent    = (s.uniqueReaders || 0).toLocaleString();
+  $("#stats-avgread").textContent   = (s.avgReadMinutes || 0).toFixed(1) + "m";
+  $("#stats-completion").textContent= (s.completionRate || 0).toFixed(0) + "%";
+  $("#stats-trend").textContent = s.status === "published" ? "↗ live" : "draft — synthetic preview";
+
+  const series = s.series || [];
+  const max = Math.max(1, ...series.map((d) => d.views || 0));
+  $("#stats-chart").innerHTML = series.map((d) => {
+    const h = Math.max(4, Math.round((d.views / max) * 100));
+    return `<div class="stats-chart__bar" style="height:${h}%" data-tip="${escapeHtml(d.date)} · ${d.views} views"></div>`;
+  }).join("");
+
+  const geo = s.byCountry || [];
+  const gmax = Math.max(1, ...geo.map((g) => g.views));
+  $("#stats-geo").innerHTML = geo.map((g) => {
+    const intensity = (g.views / gmax);
+    const bg = `rgba(232,192,99,${(0.05 + intensity * 0.18).toFixed(3)})`;
+    const border = `rgba(232,192,99,${(0.18 + intensity * 0.35).toFixed(3)})`;
+    const glow = `rgba(232,192,99,${(0.15 + intensity * 0.45).toFixed(3)})`;
+    return `
+      <div class="stats-geo__cell" style="--cell-bg:${bg};--cell-border:${border};--cell-glow:${glow}">
+        <span class="stats-geo__country">${escapeHtml(g.country)}</span>
+        <strong class="stats-geo__views">${g.views.toLocaleString()}</strong>
+      </div>`;
+  }).join("");
+}
+
+const EMOJI_POOL = ["✦", "✧", "❋", "❉", "✺", "✿", "❀", "✶", "✷", "✤", "☾", "☉", "⚘", "❄", "❃", "❂"];
+function cycleEmoji() {
+  const cur = $("#broadcast-emoji").textContent || "✦";
+  const idx = EMOJI_POOL.indexOf(cur);
+  const next = EMOJI_POOL[(idx + 1) % EMOJI_POOL.length];
+  $("#broadcast-emoji").textContent = next;
+  scheduleBroadcastSave();
+}
+
+function wireBroadcastOnce() {
+  $("#broadcast-new").addEventListener("click", createArticle);
+  $("#broadcast-back").addEventListener("click", closeArticle);
+  $("#broadcast-emoji").addEventListener("click", cycleEmoji);
+  ["input"].forEach((ev) => {
+    $("#broadcast-title").addEventListener(ev, scheduleBroadcastSave);
+    $("#broadcast-subtitle").addEventListener(ev, scheduleBroadcastSave);
+    $("#broadcast-body").addEventListener(ev, scheduleBroadcastSave);
+  });
+  $$(".broadcast-bar__tabs .ws-pill").forEach((p) => p.addEventListener("click", () => switchBroadcastTab(p.dataset.tab)));
+  $("#broadcast-translate").addEventListener("click", translatePreviews);
+  $("#broadcast-publish").addEventListener("click", publishArticle);
+  $("#broadcast-unpublish").addEventListener("click", unpublishArticle);
+  $("#broadcast-delete").addEventListener("click", deleteArticle);
+}
+
+
+/* ════════════════════════ 17. Boot ══════════════════════════════════════ */
 
 document.addEventListener("DOMContentLoaded", () => {
-  // Sync the html class with the actual auth state — the pre-paint
-  // helper only checked localStorage, so this guarantees correctness.
   const isAuthed = !!(state.accessToken && state.user);
   document.documentElement.classList.toggle("is-authed", isAuthed);
   document.documentElement.classList.toggle("is-anon", !isAuthed);
 
   wireHeroOnce();
   wireStudioOnce();
+  wireWorkspaceSwitcher();
+  wireNexusOnce();
+  wireVaultOnce();
+  wireBroadcastOnce();
   renderNav();
 
-  showView(isAuthed ? "hero" : "auth");
+  if (!isAuthed) {
+    showView("auth");
+  } else {
+    const startView = WORKSPACES.includes(state.workspace) ? state.workspace : "library";
+    showView(startView);
+  }
 });

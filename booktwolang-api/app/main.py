@@ -30,6 +30,9 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from .articles import public_router as articles_public_router, router as articles_router
+from .canvas   import router as canvas_router
+from .journal  import router as journal_router
 from .translate import (
     LANGUAGES,
     TranslationError,
@@ -63,6 +66,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(users_router)
+app.include_router(canvas_router)
+app.include_router(journal_router)
+app.include_router(articles_router)
+app.include_router(articles_public_router)
 
 
 def _now_iso() -> str:

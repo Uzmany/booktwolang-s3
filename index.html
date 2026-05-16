@@ -232,20 +232,24 @@
           </p>
         </header>
 
-        <!-- Equalizer language picker -->
-        <div class="equalizer animate-rise" style="animation-delay:80ms" aria-label="Choose target language">
-          <div class="equalizer__head">
-            <span class="equalizer__pre">Translate into</span>
-            <strong id="equalizer-current" class="equalizer__current">…</strong>
-          </div>
-          <div class="equalizer__rail">
-            <button id="eq-scroll-left"  type="button" class="equalizer__chev" aria-label="Scroll left">
-              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M15 6l-6 6 6 6"/></svg>
-            </button>
-            <div id="equalizer-bars" class="equalizer__bars" role="listbox" aria-label="Languages"></div>
-            <button id="eq-scroll-right" type="button" class="equalizer__chev" aria-label="Scroll right">
-              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg>
-            </button>
+        <!-- Language picker -->
+        <div class="lang-picker animate-rise" style="animation-delay:80ms">
+          <button id="lang-trigger" class="lang-trigger" type="button" aria-haspopup="dialog" aria-expanded="false">
+            <span class="lang-trigger__pre">Translate into</span>
+            <span class="lang-trigger__name">
+              <strong id="lang-trigger-english">…</strong>
+              <em    id="lang-trigger-native"  hidden></em>
+            </span>
+            <span class="lang-trigger__cta">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+              <span class="lang-trigger__cta-label">Browse all</span>
+              <span class="kbd">⌘K</span>
+            </span>
+          </button>
+
+          <div id="lang-recent" class="lang-recent" hidden>
+            <span class="micro-label">Recent</span>
+            <div id="lang-recent-pills" class="lang-recent__pills"></div>
           </div>
         </div>
 
@@ -539,6 +543,30 @@
 
     <!-- ───────────── Toasts ───────────── -->
     <div id="toasts" class="toasts" aria-live="polite"></div>
+
+    <!-- ───────────── Language picker popover ───────────── -->
+    <div id="lang-popover" class="lang-popover" hidden role="dialog" aria-modal="true" aria-label="Choose target language">
+      <div class="lang-popover__backdrop" data-close></div>
+      <div class="lang-popover__panel animate-rise">
+        <header class="lang-popover__head">
+          <span class="lang-popover__icon">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          </span>
+          <input id="lang-search" type="text" placeholder="Search by name, native script, or code…" autocomplete="off" spellcheck="false" />
+          <button type="button" class="iconbtn" data-close aria-label="Close">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </header>
+        <div id="lang-popover-list" class="lang-popover__list scrollbar"></div>
+        <footer class="lang-popover__foot">
+          <span><span class="kbd">↑</span><span class="kbd">↓</span> navigate</span>
+          <span class="dot-sep">·</span>
+          <span><span class="kbd">↵</span> select</span>
+          <span class="dot-sep">·</span>
+          <span><span class="kbd">esc</span> close</span>
+        </footer>
+      </div>
+    </div>
 
     <!-- ───────────── Help overlay ───────────── -->
     <div id="help-overlay" class="overlay" hidden>

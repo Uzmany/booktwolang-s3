@@ -13,7 +13,7 @@
  *   3. Toast system
  *   4. Auth (login / signup / logout / nav)
  *   5. View routing
- *   6. Languages + speaker weighting + equalizer
+ *   6. Languages + searchable picker (trigger + recent pills + popover)
  *   7. Hero dashboard (dropzone, paste, library)
  *   8. PDF / DOCX / TXT extraction
  *   9. Document polling
@@ -35,11 +35,27 @@ const STORAGE = {
   token:        "btl_access_token_v2",
   user:         "btl_user_v2",
   targetLang:   "btl_target_lang_v2",
+  recentLangs:  "btl_recent_langs_v1",
   tone:         "btl_tone_v2",
   formatLock:   "btl_format_lock_v2",
   splitRatio:   "btl_split_ratio_v2",
   memory:       "btl_memory_v2",
 };
+
+/* Native-script names. Falls back to the API's English label when missing. */
+const NATIVE_NAMES = {
+  en: "English",   es: "Español",     fr: "Français",      de: "Deutsch",
+  it: "Italiano",  pt: "Português",   nl: "Nederlands",    ru: "Русский",
+  pl: "Polski",    uk: "Українська",  tr: "Türkçe",        ar: "العربية",
+  he: "עברית",     fa: "فارسی",       ur: "اردو",           hi: "हिन्दी",
+  bn: "বাংলা",      ja: "日本語",        ko: "한국어",          zh: "中文",
+  "zh-Hant": "繁體中文",   vi: "Tiếng Việt",  th: "ไทย",
+  id: "Bahasa Indonesia",  ms: "Bahasa Melayu",
+  sv: "Svenska",   no: "Norsk",       da: "Dansk",         fi: "Suomi",
+  cs: "Čeština",   el: "Ελληνικά",    ro: "Română",        hu: "Magyar",
+};
+
+const POPULAR_CODES = ["en", "es", "fr", "de", "zh", "ja", "ar", "hi", "pt", "ru"];
 
 const TONES = [
   { id: 0, key: "literal",  label: "Literal",  model: "gemini-3-flash-preview", angle: -45 },
@@ -47,16 +63,6 @@ const TONES = [
   { id: 2, key: "academic", label: "Academic", model: "gemini-3-pro-preview",   angle:  45 },
 ];
 
-/* Rough native-speaker counts (millions) — drives equalizer bar heights so
-   the visual reads like a real audio EQ. Languages absent here fall back
-   to a sensible mid-height. */
-const SPEAKERS_M = {
-  en: 1500, zh: 1100, hi: 600, es: 550, fr: 280, ar: 420, bn: 270, pt: 260,
-  ru: 260, ur: 230, ja: 125, de: 130, ko:  80, vi:  85, it:  65, tr:  85,
-  fa:  70, pl:  45, uk:  40, nl:  25, th:  60, id: 200, ms: 290, sv:  10,
-  no:   5, da:   6, fi:   5, cs:  10, el:  13, ro:  24, hu:  13, he:   9,
-  "zh-Hant": 100,
-};
 
 const state = {
   view: "auth",                         // 'auth' | 'hero' | 'studio'
@@ -320,7 +326,7 @@ async function showView(view) {
 }
 
 
-/* ════════════════════════ 6. Languages + equalizer ══════════════════════ */
+/* ════════════════════════ 6. Languages + picker ═════════════════════════ */
 
 async function refreshLanguages() {
   if (state.languages.length) {
@@ -343,82 +349,202 @@ function languageName(code) {
 
 function populateLanguageWidgets() {
   if (!state.languages.length) return;
-  // Initial target language
+
+  // Resolve target language (saved → preferred → es)
   const wanted = state.targetLang || state.user?.preferredTargetLang || "es";
   state.targetLang = state.languages.some((l) => l.code === wanted) ? wanted : "es";
   localStorage.setItem(STORAGE.targetLang, state.targetLang);
 
-  // Paste source language
+  // Paste-panel source-language dropdown
   const sourceOpts = `<option value="auto">Auto-detect</option>` +
     state.languages.map((l) => `<option value="${l.code}">${escapeHtml(l.name)}</option>`).join("");
   $("#paste-source-lang").innerHTML = sourceOpts;
 
-  renderEqualizer();
+  renderLangTrigger();
+  renderRecentPills();
 }
 
-let _equalizerWired = false;
-function renderEqualizer() {
-  const bars = $("#equalizer-bars");
-  const sorted = [...state.languages].sort((a, b) => (SPEAKERS_M[b.code] || 25) - (SPEAKERS_M[a.code] || 25));
-
-  bars.innerHTML = sorted.map((l) => {
-    const speakers = SPEAKERS_M[l.code] || 25;
-    const h = Math.round(22 + (Math.log10(speakers) / Math.log10(1500)) * 78);
-    const isActive = l.code === state.targetLang;
-    return `
-      <button class="eq-bar ${isActive ? "is-active" : ""}" data-code="${l.code}" type="button"
-              role="option" aria-selected="${isActive}" title="${escapeHtml(l.name)}">
-        <span class="eq-bar__fill" style="height:${h}%"></span>
-        <span class="eq-bar__label">${escapeHtml(l.code)}</span>
-      </button>`;
-  }).join("");
-
-  if (!_equalizerWired) {
-    bars.addEventListener("click", onEqualizerClick);
-    bars.addEventListener("wheel", onEqualizerWheel, { passive: false });
-    $("#eq-scroll-left").onclick  = () => bars.scrollBy({ left: -240, behavior: "smooth" });
-    $("#eq-scroll-right").onclick = () => bars.scrollBy({ left:  240, behavior: "smooth" });
-    _equalizerWired = true;
-  }
-
-  updateEqualizerHead();
-  centerActiveBar();
-}
-
-function onEqualizerClick(e) {
-  const btn = e.target.closest(".eq-bar");
-  if (!btn) return;
-  setTargetLang(btn.dataset.code);
-}
-function onEqualizerWheel(e) {
-  if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-    e.preventDefault();
-    e.currentTarget.scrollLeft += e.deltaY;
-  }
-}
 function setTargetLang(code) {
-  if (state.targetLang === code) return;
+  if (!code || state.targetLang === code) return;
+  if (!state.languages.some((l) => l.code === code)) return;
   state.targetLang = code;
   localStorage.setItem(STORAGE.targetLang, code);
-  $$("#equalizer-bars .eq-bar").forEach((b) => {
-    const active = b.dataset.code === code;
-    b.classList.toggle("is-active", active);
-    b.setAttribute("aria-selected", active ? "true" : "false");
-  });
-  updateEqualizerHead();
-  centerActiveBar();
+  pushRecentLang(code);
+  renderLangTrigger();
+  renderRecentPills();
   api("/v1/users/me", { method: "PATCH", body: { preferredTargetLang: code } }).catch(() => {});
 }
-function updateEqualizerHead() {
-  const el = $("#equalizer-current");
-  if (!el) return;
-  const name = languageName(state.targetLang);
-  el.textContent = name;
+
+function renderLangTrigger() {
+  const lang = state.languages.find((l) => l.code === state.targetLang);
+  if (!lang) return;
+  $("#lang-trigger-english").textContent = lang.name;
+  const nativeEl = $("#lang-trigger-native");
+  const native = NATIVE_NAMES[lang.code];
+  if (native && native !== lang.name) {
+    nativeEl.textContent = native;
+    nativeEl.hidden = false;
+  } else {
+    nativeEl.textContent = "";
+    nativeEl.hidden = true;
+  }
 }
-function centerActiveBar() {
-  const active = $("#equalizer-bars .eq-bar.is-active");
-  if (!active) return;
-  active.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+
+function getRecentLangs() {
+  const stored = safeParse(localStorage.getItem(STORAGE.recentLangs)) || [];
+  if (!Array.isArray(stored)) return [];
+  return stored.filter((code) => state.languages.some((l) => l.code === code));
+}
+function pushRecentLang(code) {
+  const recent = getRecentLangs();
+  const next = [code, ...recent.filter((c) => c !== code)].slice(0, 6);
+  localStorage.setItem(STORAGE.recentLangs, JSON.stringify(next));
+}
+
+function renderRecentPills() {
+  const recents = getRecentLangs().filter((c) => c !== state.targetLang).slice(0, 5);
+  const container = $("#lang-recent");
+  if (!recents.length) { container.hidden = true; return; }
+  container.hidden = false;
+  $("#lang-recent-pills").innerHTML = recents.map((code) => {
+    const lang = state.languages.find((l) => l.code === code);
+    if (!lang) return "";
+    const native = NATIVE_NAMES[code];
+    return `
+      <button class="lang-pill-btn" data-code="${escapeHtml(code)}" type="button" title="${escapeHtml(lang.name)}">
+        <span>${escapeHtml(lang.name)}</span>
+        ${native && native !== lang.name ? `<em>${escapeHtml(native)}</em>` : ""}
+      </button>`;
+  }).join("");
+}
+
+/* ── Searchable popover ───────────────────────────────────────────────── */
+
+let _langPickerCursor = -1;
+let _langPickerResults = [];
+
+function openLangPicker() {
+  const pop = $("#lang-popover");
+  pop.hidden = false;
+  pop.setAttribute("aria-hidden", "false");
+  $("#lang-trigger").setAttribute("aria-expanded", "true");
+  const search = $("#lang-search");
+  search.value = "";
+  _langPickerCursor = -1;
+  renderLangPickerList("");
+  // Scroll active row into view
+  setTimeout(() => {
+    search.focus();
+    const active = $("#lang-popover-list .lang-row.is-active");
+    if (active) active.scrollIntoView({ block: "center" });
+  }, 30);
+  document.addEventListener("keydown", onLangPickerKeydown);
+}
+function closeLangPicker() {
+  const pop = $("#lang-popover");
+  if (pop.hidden) return;
+  pop.hidden = true;
+  pop.setAttribute("aria-hidden", "true");
+  $("#lang-trigger").setAttribute("aria-expanded", "false");
+  document.removeEventListener("keydown", onLangPickerKeydown);
+}
+
+function onLangPickerKeydown(e) {
+  if (e.key === "Escape") { e.preventDefault(); closeLangPicker(); return; }
+  if (e.key === "ArrowDown") { e.preventDefault(); moveLangCursor(1); return; }
+  if (e.key === "ArrowUp")   { e.preventDefault(); moveLangCursor(-1); return; }
+  if (e.key === "Enter") {
+    e.preventDefault();
+    const idx = _langPickerCursor >= 0 ? _langPickerCursor : 0;
+    const result = _langPickerResults[idx];
+    if (result) { setTargetLang(result.code); closeLangPicker(); }
+  }
+}
+function moveLangCursor(delta) {
+  if (!_langPickerResults.length) return;
+  if (_langPickerCursor < 0) {
+    _langPickerCursor = delta > 0 ? 0 : _langPickerResults.length - 1;
+  } else {
+    _langPickerCursor = (_langPickerCursor + delta + _langPickerResults.length) % _langPickerResults.length;
+  }
+  const rows = $$("#lang-popover-list .lang-row");
+  rows.forEach((row, i) => row.classList.toggle("is-cursor", i === _langPickerCursor));
+  rows[_langPickerCursor]?.scrollIntoView({ block: "nearest" });
+}
+
+function normalizeForSearch(s) {
+  return String(s || "").toLowerCase().normalize("NFKD").replace(/\p{Diacritic}/gu, "");
+}
+
+function renderLangPickerList(query) {
+  const list = $("#lang-popover-list");
+  const q = normalizeForSearch(query.trim());
+  const all = state.languages.slice();
+
+  if (q) {
+    const matches = all.filter((l) => {
+      return normalizeForSearch(l.name).includes(q)
+          || normalizeForSearch(l.code).includes(q)
+          || normalizeForSearch(NATIVE_NAMES[l.code] || "").includes(q);
+    }).sort((a, b) => {
+      // Prefix matches first, then by name
+      const aPre = normalizeForSearch(a.name).startsWith(q) ? 0 : 1;
+      const bPre = normalizeForSearch(b.name).startsWith(q) ? 0 : 1;
+      if (aPre !== bPre) return aPre - bPre;
+      return a.name.localeCompare(b.name);
+    });
+    _langPickerResults = matches;
+    if (!matches.length) {
+      list.innerHTML = `<div class="lang-popover__empty">No language matches <em>"${escapeHtml(query)}"</em>.<br/>Try a different name, native script, or ISO code.</div>`;
+      return;
+    }
+    list.innerHTML = matches.map(renderLangRow).join("");
+  } else {
+    const recents  = getRecentLangs();
+    const recentSet = new Set(recents);
+    const popular  = POPULAR_CODES
+      .filter((c) => state.languages.some((l) => l.code === c) && !recentSet.has(c));
+    const popularSet = new Set(popular);
+    const rest = all
+      .filter((l) => !recentSet.has(l.code) && !popularSet.has(l.code))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    const sections = [];
+    if (recents.length) {
+      const langs = recents.map((c) => state.languages.find((l) => l.code === c)).filter(Boolean);
+      if (langs.length) sections.push({ label: "Recent", langs });
+    }
+    if (popular.length) {
+      const langs = popular.map((c) => state.languages.find((l) => l.code === c)).filter(Boolean);
+      if (langs.length) sections.push({ label: "Popular", langs });
+    }
+    if (rest.length) sections.push({ label: "All", langs: rest });
+
+    _langPickerResults = sections.flatMap((s) => s.langs);
+    list.innerHTML = sections.map((s) => `
+      <div class="lang-popover__group">${escapeHtml(s.label)}</div>
+      ${s.langs.map(renderLangRow).join("")}
+    `).join("");
+  }
+
+  // Mark active
+  $$("#lang-popover-list .lang-row").forEach((row) => {
+    row.classList.toggle("is-active", row.dataset.code === state.targetLang);
+  });
+}
+
+function renderLangRow(lang) {
+  const native = NATIVE_NAMES[lang.code];
+  const showNative = native && native !== lang.name;
+  return `
+    <button class="lang-row" data-code="${escapeHtml(lang.code)}" type="button" role="option">
+      <span class="lang-row__english">${escapeHtml(lang.name)}</span>
+      <span class="lang-row__native">${showNative ? escapeHtml(native) : ""}</span>
+      <span class="lang-row__code">${escapeHtml(lang.code)}</span>
+      <span class="lang-row__check">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      </span>
+    </button>`;
 }
 
 
@@ -428,6 +554,45 @@ function wireHeroOnce() {
   // Auth tabs
   $("#tab-login").addEventListener("click", () => switchAuthTab("login"));
   $("#tab-signup").addEventListener("click", () => switchAuthTab("signup"));
+
+  // Language trigger + popover
+  $("#lang-trigger").addEventListener("click", openLangPicker);
+  $("#lang-recent").addEventListener("click", (e) => {
+    const btn = e.target.closest(".lang-pill-btn");
+    if (!btn) return;
+    setTargetLang(btn.dataset.code);
+  });
+  $("#lang-search").addEventListener("input", (e) => {
+    _langPickerCursor = -1;
+    renderLangPickerList(e.target.value);
+  });
+  $$("#lang-popover [data-close]").forEach((el) => el.addEventListener("click", closeLangPicker));
+  $("#lang-popover-list").addEventListener("click", (e) => {
+    const row = e.target.closest(".lang-row");
+    if (!row) return;
+    setTargetLang(row.dataset.code);
+    closeLangPicker();
+  });
+  $("#lang-popover-list").addEventListener("mousemove", (e) => {
+    const row = e.target.closest(".lang-row");
+    if (!row) return;
+    const rows = $$("#lang-popover-list .lang-row");
+    const idx = rows.indexOf(row);
+    if (idx >= 0 && idx !== _langPickerCursor) {
+      _langPickerCursor = idx;
+      rows.forEach((r, i) => r.classList.toggle("is-cursor", i === idx));
+    }
+  });
+  // ⌘K / Ctrl+K shortcut
+  document.addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      if (state.view !== "hero") return;
+      const inField = e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA");
+      if (inField && e.target.id !== "lang-search") return;
+      e.preventDefault();
+      openLangPicker();
+    }
+  });
 
   // Dropzone
   const dz = $("#dropzone");

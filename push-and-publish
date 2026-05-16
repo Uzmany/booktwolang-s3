@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# push-and-publish — commit, push, deploy frontend (S3 + CloudFront) and
+# backend (EC2 uvicorn) in one shot. Modelled on the ketzek-s3 and
+# 10xquery-s3 scripts.
+#
+# Usage: ./push-and-publish "commit message"
+#
+# Prereqs:
+#   - AWS CLI configured for account 912112639269
+#   - $HOME/.ssh/ketzek_ai_backend_2.pem present (chmod 400)
+#   - /home/ec2-user/.booktwolang.env on the EC2 box with
+#       GEMINI_API_KEY=...
+#       JWT_SECRET=...
+#   - CLOUDFRONT_ID exported once you create the distribution (the
+#     script will skip cache invalidation otherwise).
+
+set -euo pipefail
+
+if [[ $# -lt 1 ]]; then
+  echo "Usage: $0 \"commit message\"" >&2
+  exit 1
+fi
+COMMIT_MSG="$1"
+
+EC2_HOST="${EC2_HOST:-54.242.99.16}"
+EC2_USER="${EC2_USER:-ec2-user}"
+KEY="${KEY:-$HOME/.ssh/ketzek_ai_backend_2.pem}"
+S3_BUCKET="${S3_BUCKET:-www.booktwolang.com}"
+CLOUDFRONT_ID="${CLOUDFRONT_ID:-}"
+API_PORT="${API_PORT:-8001}"
+REMOTE_DIR="${REMOTE_DIR:-/home/ec2-user/booktwolang-s3}"
+
+if [[ ! -f "$KEY" ]]; then
+  echo "[!] SSH key not found at $KEY" >&2
+  exit 1
+fi
+
+echo "[1/4] Committing and pushing to GitHub..."
+git add -A
+git commit -m "$COMMIT_MSG" 2>/dev/null || echo "  (nothing to commit)"
+git push origin HEAD
+
+echo "[2/4] Syncing frontend to s3://$S3_BUCKET/..."
+aws s3 sync . "s3://$S3_BUCKET/" \
+  --delete \
+  --exclude ".git/*" \
+  --exclude "*.DS_Store" \
+  --exclude "*.pem" \
+  --exclude ".gitignore" \
+  --exclude "booktwolang-api/*" \
+  --exclude "push-and-publish" \
+  --exclude "*.md"
+
+if [[ -n "$CLOUDFRONT_ID" ]]; then
+  echo "[3/4] Invalidating CloudFront $CLOUDFRONT_ID..."
+  aws cloudfront create-invalidation \
+    --distribution-id "$CLOUDFRONT_ID" \
+    --paths "/*" \
+    --query "Invalidation.Id" --output text
+else
+  echo "[3/4] Skipping CloudFront invalidation (CLOUDFRONT_ID not set)."
+fi
+
+echo "[4/4] Restarting backend on EC2 ($EC2_HOST:$API_PORT)..."
+ssh -i "$KEY" -o StrictHostKeyChecking=no "$EC2_USER@$EC2_HOST" \
+  REMOTE_DIR="$REMOTE_DIR" API_PORT="$API_PORT" bash <<'REMOTE'
+set -euo pipefail
+
+if [[ ! -d "$REMOTE_DIR" ]]; then
+  echo "  cloning fresh into $REMOTE_DIR"
+  git clone https://github.com/Uzmany/booktwolang-s3.git "$REMOTE_DIR"
+fi
+
+cd "$REMOTE_DIR"
+git fetch --all --quiet
+git reset --hard "@{upstream}" --quiet
+
+cd booktwolang-api
+if [[ ! -d .venv ]]; then
+  python3 -m venv .venv
+fi
+.venv/bin/pip install --quiet --disable-pip-version-check -r requirements.txt
+
+if [[ -f /home/ec2-user/.booktwolang.env ]]; then
+  set -a; source /home/ec2-user/.booktwolang.env; set +a
+fi
+
+pkill -f "uvicorn app.main:app --host 0.0.0.0 --port $API_PORT" 2>/dev/null || true
+sleep 1
+nohup .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port "$API_PORT" \
+  > /tmp/booktwolang.log 2>&1 &
+sleep 2
+if curl -sf "http://localhost:$API_PORT/" > /dev/null; then
+  echo "  backend up on :$API_PORT"
+else
+  echo "  WARN: backend health check failed; tail /tmp/booktwolang.log"
+  tail -n 25 /tmp/booktwolang.log || true
+  exit 1
+fi
+REMOTE
+
+echo "Deploy complete: https://booktwolang.com"

@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BookTwoLang — AI document translation</title>
+    <meta name="description" content="Translate documents and books between 30+ languages with AI. Paste text or upload .txt/.docx files." />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='12' fill='%230d9488'/><text x='50%25' y='54%25' text-anchor='middle' fill='white' font-family='ui-sans-serif,system-ui,sans-serif' font-size='34' font-weight='700' dominant-baseline='middle'>B2</text></svg>" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              ink: { 50: '#f1f5f9', 200: '#cbd5e1', 400: '#94a3b8', 500: '#64748b', 700: '#334155', 800: '#1e293b', 900: '#0f172a', 950: '#020617' },
+              brand: { 400: '#2dd4bf', 500: '#14b8a6', 600: '#0d9488', 700: '#0f766e' },
+            },
+            fontFamily: { sans: ['"Inter"', 'ui-sans-serif', 'system-ui', 'sans-serif'] },
+          },
+        },
+      };
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <style>
+      html, body { height: 100%; }
+      body { background: radial-gradient(1200px 600px at 80% -10%, rgba(20,184,166,0.10), transparent 60%), #020617; color: #e2e8f0; }
+      .glass { background: rgba(15, 23, 42, 0.65); backdrop-filter: saturate(140%) blur(8px); }
+      .scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
+      .scrollbar::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.25); border-radius: 999px; }
+      textarea { font-family: 'Inter', ui-sans-serif, system-ui, sans-serif; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body class="font-sans antialiased">
+    <header class="border-b border-white/5 sticky top-0 z-20 glass">
+      <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+        <a href="/" class="flex items-center gap-2 text-white font-semibold tracking-tight">
+          <span class="inline-flex items-center justify-center w-7 h-7 rounded-md bg-brand-600 text-white text-sm">B2</span>
+          BookTwoLang
+        </a>
+        <nav id="nav-actions" class="flex items-center gap-2 text-sm"></nav>
+      </div>
+    </header>
+
+    <main class="max-w-6xl mx-auto px-6 py-10">
+      <!-- AUTH VIEW -->
+      <section id="view-auth" class="grid md:grid-cols-2 gap-10 items-center">
+        <div>
+          <h1 class="text-4xl md:text-5xl font-bold leading-tight text-white">Translate entire books with one click.</h1>
+          <p class="mt-4 text-ink-200 text-lg max-w-prose">Paste text or upload a <code class="text-brand-400">.txt</code> / <code class="text-brand-400">.docx</code> document. BookTwoLang chunks long writing on paragraph boundaries and translates each piece with Gemini, so even novel-length manuscripts come out coherent.</p>
+          <ul class="mt-6 space-y-2 text-ink-200 text-sm">
+            <li class="flex gap-2"><span class="text-brand-400">›</span> 30+ language pairs</li>
+            <li class="flex gap-2"><span class="text-brand-400">›</span> Live progress while long docs translate</li>
+            <li class="flex gap-2"><span class="text-brand-400">›</span> Your documents stay in your account</li>
+          </ul>
+        </div>
+        <div class="glass border border-white/10 rounded-xl p-6 md:p-8">
+          <div class="flex gap-2 mb-6 text-sm">
+            <button id="tab-login" class="px-3 py-1.5 rounded-md bg-white/10 text-white" type="button">Log in</button>
+            <button id="tab-signup" class="px-3 py-1.5 rounded-md text-ink-200 hover:bg-white/5" type="button">Sign up</button>
+          </div>
+
+          <form id="form-login" class="space-y-3" onsubmit="event.preventDefault(); window.handleLogin();">
+            <label class="block text-sm">
+              <span class="text-ink-200">Email</span>
+              <input name="email" type="email" required autocomplete="email"
+                class="mt-1 w-full px-3 py-2 rounded-md bg-ink-900/60 border border-white/10 text-white outline-none focus:border-brand-500" />
+            </label>
+            <label class="block text-sm">
+              <span class="text-ink-200">Password</span>
+              <input name="password" type="password" required autocomplete="current-password"
+                class="mt-1 w-full px-3 py-2 rounded-md bg-ink-900/60 border border-white/10 text-white outline-none focus:border-brand-500" />
+            </label>
+            <button type="submit" class="w-full mt-2 px-4 py-2 rounded-md bg-brand-600 hover:bg-brand-500 text-white font-medium">Log in</button>
+            <p id="login-error" class="text-sm text-red-400" hidden></p>
+          </form>
+
+          <form id="form-signup" class="space-y-3" hidden onsubmit="event.preventDefault(); window.handleSignup();">
+            <label class="block text-sm">
+              <span class="text-ink-200">Display name</span>
+              <input name="displayName" type="text" maxlength="80"
+                class="mt-1 w-full px-3 py-2 rounded-md bg-ink-900/60 border border-white/10 text-white outline-none focus:border-brand-500" />
+            </label>
+            <label class="block text-sm">
+              <span class="text-ink-200">Email</span>
+              <input name="email" type="email" required autocomplete="email"
+                class="mt-1 w-full px-3 py-2 rounded-md bg-ink-900/60 border border-white/10 text-white outline-none focus:border-brand-500" />
+            </label>
+            <label class="block text-sm">
+              <span class="text-ink-200">Password</span>
+              <input name="password" type="password" required minlength="8" autocomplete="new-password"
+                class="mt-1 w-full px-3 py-2 rounded-md bg-ink-900/60 border border-white/10 text-white outline-none focus:border-brand-500" />
+            </label>
+            <button type="submit" class="w-full mt-2 px-4 py-2 rounded-md bg-brand-600 hover:bg-brand-500 text-white font-medium">Create account</button>
+            <p id="signup-error" class="text-sm text-red-400" hidden></p>
+          </form>
+        </div>
+      </section>
+
+      <!-- APP VIEW -->
+      <section id="view-app" hidden>
+        <div class="grid md:grid-cols-[1fr_2fr] gap-6">
+          <aside class="glass border border-white/10 rounded-xl p-4 max-h-[calc(100vh-9rem)] overflow-auto scrollbar">
+            <div class="flex items-center justify-between mb-3">
+              <h2 class="text-sm font-semibold text-ink-200 uppercase tracking-wider">Your documents</h2>
+              <button id="new-doc-btn" class="text-xs text-brand-400 hover:text-brand-300" type="button">+ new</button>
+            </div>
+            <ul id="doc-list" class="space-y-1"></ul>
+            <p id="doc-list-empty" class="text-sm text-ink-400 mt-2" hidden>Nothing yet — paste some text on the right to begin.</p>
+          </aside>
+
+          <div class="space-y-6">
+            <div class="glass border border-white/10 rounded-xl p-5">
+              <div class="flex flex-wrap items-end gap-3">
+                <label class="grow text-sm">
+                  <span class="text-ink-200">Title</span>
+                  <input id="new-title" type="text" placeholder="My document"
+                    class="mt-1 w-full px-3 py-2 rounded-md bg-ink-900/60 border border-white/10 text-white outline-none focus:border-brand-500" />
+                </label>
+                <label class="text-sm">
+                  <span class="text-ink-200">Source</span>
+                  <select id="new-source-lang" class="mt-1 px-3 py-2 rounded-md bg-ink-900/60 border border-white/10 text-white outline-none focus:border-brand-500">
+                    <option value="auto">Auto-detect</option>
+                  </select>
+                </label>
+                <label class="text-sm">
+                  <span class="text-ink-200">Target</span>
+                  <select id="new-target-lang" class="mt-1 px-3 py-2 rounded-md bg-ink-900/60 border border-white/10 text-white outline-none focus:border-brand-500"></select>
+                </label>
+                <label class="text-sm cursor-pointer">
+                  <span class="text-ink-200">File</span>
+                  <input id="new-file" type="file" accept=".txt,.docx" class="mt-1 block text-xs text-ink-200 file:mr-2 file:px-3 file:py-1.5 file:rounded-md file:border-0 file:bg-white/10 file:text-white" />
+                </label>
+              </div>
+              <textarea id="new-text" rows="10" placeholder="Paste text here, or pick a .txt / .docx file above…"
+                class="mt-3 w-full px-3 py-2 rounded-md bg-ink-900/60 border border-white/10 text-white outline-none focus:border-brand-500 scrollbar"></textarea>
+              <div class="mt-3 flex items-center justify-between gap-3">
+                <p id="new-status" class="text-xs text-ink-400"></p>
+                <button id="new-translate-btn" type="button" class="px-4 py-2 rounded-md bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium">Translate</button>
+              </div>
+            </div>
+
+            <div id="doc-detail" class="glass border border-white/10 rounded-xl p-5" hidden>
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 id="doc-title" class="text-lg font-semibold text-white"></h3>
+                  <p id="doc-meta" class="text-xs text-ink-400 mt-0.5"></p>
+                </div>
+                <div class="flex items-center gap-2 text-sm">
+                  <span id="doc-status-pill" class="px-2 py-1 rounded-md bg-white/5 text-ink-200"></span>
+                  <button id="doc-download" type="button" class="px-3 py-1.5 rounded-md bg-white/10 hover:bg-white/15 text-white">Download .txt</button>
+                  <button id="doc-delete" type="button" class="px-3 py-1.5 rounded-md bg-red-600/30 hover:bg-red-600/50 text-red-100">Delete</button>
+                </div>
+              </div>
+              <div id="doc-progress-row" class="mt-3" hidden>
+                <div class="h-1.5 w-full rounded-full bg-white/5 overflow-hidden">
+                  <div id="doc-progress-bar" class="h-full bg-brand-500 transition-all" style="width: 0%"></div>
+                </div>
+                <p id="doc-progress-text" class="mt-1 text-xs text-ink-400"></p>
+              </div>
+              <div class="mt-4 grid md:grid-cols-2 gap-3">
+                <div>
+                  <h4 class="text-xs uppercase tracking-wider text-ink-400 mb-1">Source</h4>
+                  <pre id="doc-source-pre" class="whitespace-pre-wrap text-sm text-ink-200 bg-ink-900/60 border border-white/10 rounded-md p-3 max-h-[60vh] overflow-auto scrollbar"></pre>
+                </div>
+                <div>
+                  <h4 class="text-xs uppercase tracking-wider text-ink-400 mb-1">Translation</h4>
+                  <pre id="doc-translated-pre" class="whitespace-pre-wrap text-sm text-white bg-ink-900/60 border border-white/10 rounded-md p-3 max-h-[60vh] overflow-auto scrollbar"></pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="/public/assets/js/app.js"></script>
+  </body>
+</html>
